@@ -10,14 +10,15 @@
  * @param min_value Minimum value for random integers
  * @param max_value Maximum value for random integers
  */
-std::vector<std::vector<int>> generate_matrix(int rows, int cols, int min_value, int max_value);
+std::vector<int> generate_matrix(int rows, int cols, int min_value, int max_value);
 
 /**
  * Sums two matrices element-wise.
  * @param a First matrix
  * @param b Second matrix
+ * @param rows Number of rows in the matrices
  * @return Resulting matrix after summation
  */
-std::vector<std::vector<int>> sum_matrices(const std::vector<std::vector<int>>& a, const std::vector<std::vector<int>>& b);
+std::vector<int> sum_matrices(const std::vector<int>& a, const std::vector<int>& b, int rows);
 
 #endif // MATRIX_OPS_HPP

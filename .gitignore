@@ -1,3 +1,4 @@
 .vscode/
 obj/
 bin/
+sync_to_cluster.sh

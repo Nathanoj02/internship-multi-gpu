@@ -1,58 +1,67 @@
-# Compiler and flags
-CXX = g++
-CXXFLAGS = -Wall -Wextra -std=c++11 -Iinc
-LDFLAGS =
+# Compiler settings
+NVCC := nvcc
+CXX := g++
 
-# Directories
-SRC_DIR = src
-INC_DIR = inc
-BIN_DIR = bin
-OBJ_DIR = obj
+# Project directories
+SRC_DIR := src
+INC_DIR := inc
+OBJ_DIR := obj
+BIN_DIR := bin
 
-# Target executable name
-TARGET = $(BIN_DIR)/matrix_sum
+# Target executable
+TARGET := $(BIN_DIR)/matrix_sum
 
-# Find all C++ source files
-SRCS = $(wildcard $(SRC_DIR)/*.cpp)
+# Source files
+CU_SOURCES := $(wildcard $(SRC_DIR)/*.cu)
+CPP_SOURCES := $(wildcard $(SRC_DIR)/*.cpp)
 
-# Generate object file names
-OBJS = $(SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
+# Object files
+CU_OBJECTS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.cu.o,$(CU_SOURCES))
+CPP_OBJECTS := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.cpp.o,$(CPP_SOURCES))
+OBJECTS := $(CU_OBJECTS) $(CPP_OBJECTS)
+
+# Compiler flags
+NVCC_FLAGS := -I$(INC_DIR) -O3 -gencode arch=compute_80,code=sm_80 -gencode arch=compute_89,code=sm_89
+CXX_FLAGS := -I$(INC_DIR) -O3 -std=c++11
+
+# CUDA libraries
+CUDA_LIBS := -lcudart
 
 # Default target
+.PHONY: all
 all: $(TARGET)
 
-# Link object files to create executable
-$(TARGET): $(OBJS) | $(BIN_DIR)
-	$(CXX) $(OBJS) -o $@ $(LDFLAGS)
-	@echo "Build complete: $(TARGET)"
-
-# Compile source files to object files
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
 # Create directories if they don't exist
-$(BIN_DIR):
-	mkdir -p $(BIN_DIR)
+$(OBJ_DIR) $(BIN_DIR):
+	mkdir -p $@
 
-$(OBJ_DIR):
-	mkdir -p $(OBJ_DIR)
+# Link the executable
+$(TARGET): $(OBJECTS) | $(BIN_DIR)
+	$(NVCC) $(NVCC_FLAGS) $^ -o $@ $(CUDA_LIBS)
+
+# Compile CUDA source files
+$(OBJ_DIR)/%.cu.o: $(SRC_DIR)/%.cu | $(OBJ_DIR)
+	$(NVCC) $(NVCC_FLAGS) -c $< -o $@
+
+# Compile C++ source files
+$(OBJ_DIR)/%.cpp.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
+	$(NVCC) $(NVCC_FLAGS) -x cu -c $< -o $@
 
 # Clean build artifacts
+.PHONY: clean
 clean:
 	rm -rf $(OBJ_DIR) $(BIN_DIR)
-	@echo "Clean complete"
-
-# Rebuild everything
-rebuild: clean all
 
 # Run the program
+.PHONY: run
 run: $(TARGET)
 	./$(TARGET)
 
-# Show variables (for debugging)
-debug:
-	@echo "SRCS: $(SRCS)"
-	@echo "OBJS: $(OBJS)"
-	@echo "TARGET: $(TARGET)"
-
-.PHONY: all clean rebuild run debug
+# Print variables for debugging
+.PHONY: info
+info:
+	@echo "CUDA Sources: $(CU_SOURCES)"
+	@echo "C++ Sources: $(CPP_SOURCES)"
+	@echo "CUDA Objects: $(CU_OBJECTS)"
+	@echo "C++ Objects: $(CPP_OBJECTS)"
+	@echo "Target: $(TARGET)"

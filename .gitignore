@@ -1,4 +1,9 @@
+# IDE files
 .vscode/
+
+# Build artifacts
 obj/
 bin/
+
+# Custom scripts for cluster synchronization
 sync_to_cluster.sh

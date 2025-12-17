@@ -4,7 +4,7 @@ CXX := g++
 
 # Project directories
 SRC_DIR := src
-INC_DIR := inc
+INC_DIRS := inc ../utils
 OBJ_DIR := obj
 BIN_DIR := bin
 
@@ -21,8 +21,8 @@ CPP_OBJECTS := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.cpp.o,$(CPP_SOURCES))
 OBJECTS := $(CU_OBJECTS) $(CPP_OBJECTS)
 
 # Compiler flags
-NVCC_FLAGS := -I$(INC_DIR) -O3 -gencode arch=compute_80,code=sm_80 -gencode arch=compute_89,code=sm_89
-CXX_FLAGS := -I$(INC_DIR) -O3 -std=c++11
+NVCC_FLAGS := $(addprefix -I,$(INC_DIRS)) -O3 -gencode arch=compute_80,code=sm_80 -gencode arch=compute_89,code=sm_89
+CXX_FLAGS := $(addprefix -I,$(INC_DIRS)) -O3 -std=c++11
 
 # CUDA libraries
 CUDA_LIBS := -lcudart

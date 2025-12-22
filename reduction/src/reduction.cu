@@ -2,6 +2,7 @@
 #include "error.cuh"
 #include <cuda_runtime.h>
 #include <stdio.h>
+#include <mpi.h>
 
 #define THREADS_PER_BLOCK 256
 
@@ -34,7 +35,8 @@ void reduceKernel(int* v, int *out, size_t n) {
     unsigned int i = blockIdx.x * blockDim.x * 2 + threadIdx.x;
     
     int tmp = 0;
-    if (i < n) tmp = v[i] + v[i + blockDim.x];
+    // Load up to two elements per thread, guarding bounds correctly
+    if (i < n) tmp += v[i];
     if (i + blockDim.x < n) tmp += v[i + blockDim.x];
     sdata[tid] = tmp;
 
@@ -74,7 +76,7 @@ int reduce(const int* v, int elems) {
     CUDA_CHECK( cudaMemcpy(d_v, v, elems * sizeof(int), cudaMemcpyHostToDevice) );
 
     // Compute blocks and allocate output
-    int blocks = elems / THREADS_PER_BLOCK + (elems % THREADS_PER_BLOCK == 0 ? 0 : 1);
+    int blocks = (elems + (THREADS_PER_BLOCK * 2 - 1)) / (THREADS_PER_BLOCK * 2);
     CUDA_CHECK( cudaMalloc((void**)&d_out, blocks * sizeof(int)) );
 
     // Launch kernel
@@ -98,4 +100,135 @@ int reduce(const int* v, int elems) {
     CUDA_CHECK( cudaFree(d_out) );
 
     return result;
+}
+
+int reduce_multi_cpu_mediated(const int* v, int elems) {
+    int deviceCount;
+    CUDA_CHECK( cudaGetDeviceCount(&deviceCount) );
+
+    int result = 0;
+
+    // Split work between GPUs
+    int elems_per_gpu = elems / deviceCount;
+    int remaining_elems = elems % deviceCount;
+
+    int **d_v = new int*[deviceCount];
+    int **d_out = new int*[deviceCount];
+
+    for (int gpu = 0; gpu < deviceCount; gpu++) {
+        CUDA_CHECK( cudaSetDevice(gpu) );
+
+        // Calculate elements and offset for this GPU
+        int current_elems = elems_per_gpu + (gpu == 0 ? remaining_elems : 0);
+        int offset = gpu * elems_per_gpu + (gpu == 0 ? 0 : remaining_elems);
+        
+        // Allocate device memory for input
+        CUDA_CHECK( cudaMalloc((void**)&d_v[gpu], current_elems * sizeof(int)) );
+        CUDA_CHECK( cudaMemcpy(d_v[gpu], v + offset, current_elems * sizeof(int), cudaMemcpyHostToDevice) );
+        
+        // Compute blocks and allocate output
+        int blocks = (current_elems + (THREADS_PER_BLOCK * 2 - 1)) / (THREADS_PER_BLOCK * 2);
+        CUDA_CHECK( cudaMalloc((void**)&d_out[gpu], blocks * sizeof(int)) );
+        
+        // Launch kernel
+        size_t sharedMemSize = THREADS_PER_BLOCK * sizeof(int);
+        reduceKernel<THREADS_PER_BLOCK><<<blocks, THREADS_PER_BLOCK, sharedMemSize>>>(d_v[gpu], d_out[gpu], current_elems);
+        CUDA_CHECK( cudaGetLastError() );
+    }
+
+    // Synchronize and copy results back to host
+    // Also perform final reduction on host
+    for (int gpu = 0; gpu < deviceCount; gpu++) {
+        CUDA_CHECK( cudaSetDevice(gpu) );
+        CUDA_CHECK( cudaDeviceSynchronize() );
+
+        int current_elems = elems_per_gpu + (gpu == 0 ? remaining_elems : 0);
+        
+        // Copy result from device to host
+        int blocks = (current_elems + (THREADS_PER_BLOCK * 2 - 1)) / (THREADS_PER_BLOCK * 2);
+        int *h_partial = (int *) malloc(blocks * sizeof(int));
+        CUDA_CHECK( cudaMemcpy(h_partial, d_out[gpu], blocks * sizeof(int), cudaMemcpyDeviceToHost) );
+        
+        for (int i = 0; i < blocks; ++i) {
+            result += h_partial[i];
+        }
+        
+        free(h_partial);
+
+        // Free device memory
+        CUDA_CHECK( cudaSetDevice(gpu) );
+        CUDA_CHECK( cudaFree(d_v[gpu]) );
+        CUDA_CHECK( cudaFree(d_out[gpu]) );
+    }
+
+    // Cleanup host arrays
+    delete[] d_v;
+    delete[] d_out;
+
+    return result;
+}
+
+
+int reduce_multi_mpi(const int* v, int elems, int rank) {
+    // Setup Device based on Rank
+    int deviceCount;
+    CUDA_CHECK( cudaGetDeviceCount(&deviceCount) );
+    int gpu = rank % deviceCount;
+    CUDA_CHECK( cudaSetDevice(gpu) );
+
+    // Allocate Buffers
+    // We need two buffers to swap input/output without going to CPU
+    int* d_buffer1 = nullptr;
+    int* d_buffer2 = nullptr;
+    
+    CUDA_CHECK( cudaMalloc((void**)&d_buffer1, elems * sizeof(int)) );
+    CUDA_CHECK( cudaMalloc((void**)&d_buffer2, elems * sizeof(int)) );
+
+    // Copy initial data to first buffer
+    CUDA_CHECK( cudaMemcpy(d_buffer1, v, elems * sizeof(int), cudaMemcpyHostToDevice) );
+
+    // Iterative Kernel Launch
+    int current_elems = elems;
+    int* d_in = d_buffer1;
+    int* d_out = d_buffer2;
+
+    // Continue reducing until we have only 1 element left
+    while (current_elems > 1) {
+        // Calculate grid size
+        int threads = THREADS_PER_BLOCK;
+        int blocks = (current_elems + (threads * 2 - 1)) / (threads * 2);
+
+        // Shared memory
+        size_t sharedMemSize = threads * sizeof(int);
+
+        // Launch Kernel
+        reduceKernel<THREADS_PER_BLOCK><<<blocks, threads, sharedMemSize>>>(d_in, d_out, current_elems);
+        CUDA_CHECK( cudaGetLastError() );
+        
+        // Update size for next iteration
+        current_elems = blocks;
+
+        // Swap pointers: The Output of this round becomes the Input of the next
+        std::swap(d_in, d_out);
+    }
+
+    CUDA_CHECK( cudaDeviceSynchronize() );
+
+    // MPI Communication (Direct GPU-to-GPU)
+    // After the loop, 'd_in' holds the final result (pointer was swapped)
+    int* d_global_sum;
+    CUDA_CHECK( cudaMalloc((void**)&d_global_sum, sizeof(int)) );
+
+    MPI_Allreduce(d_in, d_global_sum, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+
+    // Final Copy to Host
+    int global_result;
+    CUDA_CHECK( cudaMemcpy(&global_result, d_global_sum, sizeof(int), cudaMemcpyDeviceToHost) );
+
+    // Cleanup
+    CUDA_CHECK( cudaFree(d_buffer1) );
+    CUDA_CHECK( cudaFree(d_buffer2) );
+    CUDA_CHECK( cudaFree(d_global_sum) );
+
+    return global_result;
 }

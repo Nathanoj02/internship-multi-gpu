@@ -45,7 +45,7 @@ $(OBJ_DIR)/%.cu.o: $(SRC_DIR)/%.cu | $(OBJ_DIR)
 
 # Compile C++ source files
 $(OBJ_DIR)/%.cpp.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
-	$(NVCC) $(NVCC_FLAGS) -x cu -c $< -o $@
+	$(CXX) $(CXX_FLAGS) -c $< -o $@
 
 # Clean build artifacts
 .PHONY: clean

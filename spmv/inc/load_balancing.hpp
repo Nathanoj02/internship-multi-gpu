@@ -1,6 +1,8 @@
 #ifndef LOAD_BALANCING_HPP
 #define LOAD_BALANCING_HPP
 
+#include <cstddef>
+
 /**
  * Balances the load of non-zero elements across multiple GPUs using binary search.
  * @param nnz Total number of non-zero elements in the matrix.

@@ -170,65 +170,62 @@ int reduce_multi_cpu_mediated(const int* v, int elems) {
 
 
 int reduce_multi_mpi(const int* v, int elems, int rank) {
+    // Get the number of processes
+    int commSize;
+    MPI_Comm_size(MPI_COMM_WORLD, &commSize);
+    
     // Setup Device based on Rank
     int deviceCount;
     CUDA_CHECK( cudaGetDeviceCount(&deviceCount) );
     int gpu = rank % deviceCount;
     CUDA_CHECK( cudaSetDevice(gpu) );
 
+    // Data partitioning
+    int chunk_start = (long long)rank * elems / commSize;
+    int chunk_end = (long long)(rank + 1) * elems / commSize;
+    int local_elems = chunk_end - chunk_start;
+
     // Allocate Buffers
-    // We need two buffers to swap input/output without going to CPU
     int* d_buffer1 = nullptr;
     int* d_buffer2 = nullptr;
     
-    CUDA_CHECK( cudaMalloc((void**)&d_buffer1, elems * sizeof(int)) );
-    CUDA_CHECK( cudaMalloc((void**)&d_buffer2, elems * sizeof(int)) );
+    CUDA_CHECK( cudaMalloc((void**)&d_buffer1, local_elems * sizeof(int)) );
+    CUDA_CHECK( cudaMalloc((void**)&d_buffer2, local_elems * sizeof(int)) );
 
     // Copy initial data to first buffer
-    CUDA_CHECK( cudaMemcpy(d_buffer1, v, elems * sizeof(int), cudaMemcpyHostToDevice) );
-
+    CUDA_CHECK( cudaMemcpy(d_buffer1, v + chunk_start, local_elems * sizeof(int), cudaMemcpyHostToDevice) );
+    
     // Iterative Kernel Launch
-    int current_elems = elems;
+    int current_elems = local_elems;
     int* d_in = d_buffer1;
     int* d_out = d_buffer2;
 
     // Continue reducing until we have only 1 element left
     while (current_elems > 1) {
-        // Calculate grid size
         int threads = THREADS_PER_BLOCK;
         int blocks = (current_elems + (threads * 2 - 1)) / (threads * 2);
-
-        // Shared memory
         size_t sharedMemSize = threads * sizeof(int);
 
-        // Launch Kernel
         reduceKernel<THREADS_PER_BLOCK><<<blocks, threads, sharedMemSize>>>(d_in, d_out, current_elems);
         CUDA_CHECK( cudaGetLastError() );
         
-        // Update size for next iteration
         current_elems = blocks;
-
-        // Swap pointers: The Output of this round becomes the Input of the next
         std::swap(d_in, d_out);
     }
 
     CUDA_CHECK( cudaDeviceSynchronize() );
 
-    // MPI Communication (Direct GPU-to-GPU)
-    // After the loop, 'd_in' holds the final result (pointer was swapped)
-    int* d_global_sum;
-    CUDA_CHECK( cudaMalloc((void**)&d_global_sum, sizeof(int)) );
+    // Copy local result to host for MPI communication
+    int local_result;
+    CUDA_CHECK( cudaMemcpy(&local_result, d_in, sizeof(int), cudaMemcpyDeviceToHost) );
 
-    MPI_Allreduce(d_in, d_global_sum, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-
-    // Final Copy to Host
+    // MPI Communication using host memory
     int global_result;
-    CUDA_CHECK( cudaMemcpy(&global_result, d_global_sum, sizeof(int), cudaMemcpyDeviceToHost) );
+    MPI_Allreduce(&local_result, &global_result, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 
     // Cleanup
     CUDA_CHECK( cudaFree(d_buffer1) );
     CUDA_CHECK( cudaFree(d_buffer2) );
-    CUDA_CHECK( cudaFree(d_global_sum) );
 
     return global_result;
 }

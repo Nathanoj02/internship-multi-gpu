@@ -61,7 +61,7 @@ NUM_GPUS := $(shell nvidia-smi -L | wc -l)
 NP ?= $(NUM_GPUS)
 .PHONY: run
 run: $(TARGET)
-	mpirun -np $(NP) ./$(TARGET)
+	mpirun --mca btl ^smcuda -np $(NP) ./$(TARGET)
 
 # Print variables for debugging
 .PHONY: info

@@ -22,7 +22,14 @@ int main(int argc, char** argv) {
     int min_value = 0;
     int max_value = 9;
 
-    std::vector<int> a = generate_array(elems, min_value, max_value);
+    std::vector<int> a;
+    if (rank == 0) {
+        a = generate_array(elems, min_value, max_value);
+    } else {
+        a.resize(elems);
+    }
+    // Broadcast the whole array from Rank 0 to everyone
+    MPI_Bcast(a.data(), elems, MPI_INT, 0, MPI_COMM_WORLD);
 
     int result = 0;
 

@@ -215,17 +215,21 @@ int reduce_multi_mpi(const int* v, int elems, int rank) {
 
     CUDA_CHECK( cudaDeviceSynchronize() );
 
-    // Copy local result to host for MPI communication
-    int local_result;
-    CUDA_CHECK( cudaMemcpy(&local_result, d_in, sizeof(int), cudaMemcpyDeviceToHost) );
+    // Allocate a device buffer for the global result
+    int* d_global_result;
+    CUDA_CHECK( cudaMalloc((void**)&d_global_result, sizeof(int)) );
 
-    // MPI Communication using host memory
+    // Perform MPI Allreduce on device
+    MPI_Allreduce(d_in, d_global_result, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+
+    // Copy the final global result back to host
     int global_result;
-    MPI_Allreduce(&local_result, &global_result, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+    CUDA_CHECK( cudaMemcpy(&global_result, d_global_result, sizeof(int), cudaMemcpyDeviceToHost) );
 
     // Cleanup
     CUDA_CHECK( cudaFree(d_buffer1) );
     CUDA_CHECK( cudaFree(d_buffer2) );
+    CUDA_CHECK( cudaFree(d_global_result) );
 
     return global_result;
 }

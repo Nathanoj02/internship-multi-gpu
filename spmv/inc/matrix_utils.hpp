@@ -19,4 +19,13 @@ int read_mtx_csr(
     std::vector<float>& values
 );
 
+/**
+ * Generates an array of random floating-point numbers within a specified range.
+ * @param elems Number of elements to generate.
+ * @param min_value Minimum value (inclusive).
+ * @param max_value Maximum value (inclusive).
+ * @return A vector containing the generated random floating-point numbers.
+ */
+std::vector<float> generate_array(int elems, float min_value, float max_value);
+
 #endif // MATRIX_UTILS_CPP

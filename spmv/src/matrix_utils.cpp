@@ -6,6 +6,7 @@
 #include <string>
 #include <sstream>
 #include <stdexcept>
+#include <random>
 
 int read_mtx_csr(
     const std::string& path, 
@@ -80,4 +81,18 @@ int read_mtx_csr(
     }
 
     return 0;
+}
+
+
+std::vector<float> generate_array(int elems, float min_value, float max_value) {
+    std::vector<float> array(elems);
+    std::random_device dev;
+    std::mt19937 rng(dev());
+    std::uniform_real_distribution<> dis(min_value, max_value);
+    
+    for (int i = 0; i < elems; ++i) {
+        array[i] = dis(rng);
+    }
+
+    return array;
 }

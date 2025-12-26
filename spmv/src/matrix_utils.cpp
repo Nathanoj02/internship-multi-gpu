@@ -8,12 +8,7 @@
 #include <stdexcept>
 #include <random>
 
-int read_mtx_csr(
-    const std::string& path, 
-    std::vector<size_t>& row_ptr, 
-    std::vector<size_t>& col_ind, 
-    std::vector<float>& values
-) {
+int read_mtx_dimensions(const std::string& path, size_t* out_rows, size_t* out_nnz) {
     std::ifstream file(path);
     if (!file.is_open()) {
         std::cerr << "File opening failed!" << std::endl;
@@ -35,10 +30,36 @@ int read_mtx_csr(
         return -2;
     }
 
-    // Resize vectors for CSR
-    row_ptr.assign(rows + 1, 0); 
-    col_ind.resize(nnz);
-    values.resize(nnz);
+    *out_rows = rows;
+    *out_nnz  = nnz;
+
+    return 0;
+}
+
+int read_mtx_csr(
+    const std::string& path, size_t*& row_ptr, 
+    size_t*& col_ind, float*& values
+) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        std::cerr << "File opening failed!" << std::endl;
+        return -1;
+    }
+
+    std::string line;
+    // Skip comments
+    while (std::getline(file, line)) {
+        if (line.empty() || line[0] == '%') continue;
+        break; 
+    }
+
+    // Read dimensions
+    size_t rows, cols, nnz;
+    std::istringstream iss(line);
+    if (!(iss >> rows >> cols >> nnz)) {
+        std::cerr << "Error: Invalid matrix header format" << std::endl;
+        return -2;
+    }
 
     // Save file position to read data twice
     std::streampos data_pos = file.tellg();
@@ -66,7 +87,8 @@ int read_mtx_csr(
     file.clear(); // Clear EOF flag
     file.seekg(data_pos); // Go back to data start
 
-    std::vector<size_t> current_pos = row_ptr;
+    size_t* current_pos = new size_t[rows + 1];
+    std::copy(row_ptr, row_ptr + rows + 1, current_pos);
 
     while (file >> r >> c >> v) {
         size_t row_idx = r - 1;
@@ -80,12 +102,14 @@ int read_mtx_csr(
         current_pos[row_idx]++;
     }
 
+    delete[] current_pos;
+
     return 0;
 }
 
 
-std::vector<float> generate_array(int elems, float min_value, float max_value) {
-    std::vector<float> array(elems);
+float* generate_array(int elems, float min_value, float max_value) {
+    float *array = new float[elems];
     std::random_device dev;
     std::mt19937 rng(dev());
     std::uniform_real_distribution<> dis(min_value, max_value);

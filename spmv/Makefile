@@ -1,6 +1,6 @@
 # Compiler settings
 NVCC := nvcc
-CXX := g++
+CXX := mpicxx
 
 # Project directories
 SRC_DIR := src
@@ -10,6 +10,10 @@ BIN_DIR := bin
 
 # Target executable
 TARGET := $(BIN_DIR)/spmv
+
+# Auto-detect MPI include path for NVCC
+MPI_INCLUDE := $(shell $(CXX) --showme:incdirs)
+NVCC_MPI_FLAGS := $(addprefix -I,$(MPI_INCLUDE))
 
 # Source files
 CU_SOURCES := $(wildcard $(SRC_DIR)/*.cu)
@@ -21,11 +25,11 @@ CPP_OBJECTS := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.cpp.o,$(CPP_SOURCES))
 OBJECTS := $(CU_OBJECTS) $(CPP_OBJECTS)
 
 # Compiler flags
-NVCC_FLAGS := $(addprefix -I,$(INC_DIRS)) -O3 -gencode arch=compute_75,code=sm_75 # -gencode arch=compute_89,code=sm_89
+NVCC_FLAGS := $(addprefix -I,$(INC_DIRS)) $(NVCC_MPI_FLAGS) -O3 -gencode arch=compute_80,code=sm_80 -gencode arch=compute_89,code=sm_89
 CXX_FLAGS := $(addprefix -I,$(INC_DIRS)) -O3 -std=c++11
 
 # CUDA libraries
-CUDA_LIBS := -lcudart
+CUDA_LDFLAGS := -L/usr/local/cuda/lib64 -lcudart
 
 # Default target
 .PHONY: all
@@ -37,7 +41,7 @@ $(OBJ_DIR) $(BIN_DIR):
 
 # Link the executable
 $(TARGET): $(OBJECTS) | $(BIN_DIR)
-	$(NVCC) $(NVCC_FLAGS) $^ -o $@ $(CUDA_LIBS)
+	$(CXX) $(CXX_FLAGS) $^ -o $@ $(CUDA_LDFLAGS)
 
 # Compile CUDA source files
 $(OBJ_DIR)/%.cu.o: $(SRC_DIR)/%.cu | $(OBJ_DIR)
@@ -53,15 +57,14 @@ clean:
 	rm -rf $(OBJ_DIR) $(BIN_DIR)
 
 # Run the program
+NUM_GPUS := $(shell nvidia-smi -L | wc -l)
+NP ?= $(NUM_GPUS)
 .PHONY: run
 run: $(TARGET)
-	./$(TARGET)
+	mpirun --mca btl ^smcuda -np $(NP) ./$(TARGET)
 
 # Print variables for debugging
 .PHONY: info
 info:
-	@echo "CUDA Sources: $(CU_SOURCES)"
-	@echo "C++ Sources: $(CPP_SOURCES)"
-	@echo "CUDA Objects: $(CU_OBJECTS)"
-	@echo "C++ Objects: $(CPP_OBJECTS)"
+	@echo "MPI Include Path detected: $(MPI_INCLUDE)"
 	@echo "Target: $(TARGET)"

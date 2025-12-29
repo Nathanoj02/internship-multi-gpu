@@ -5,6 +5,7 @@
 #include <cuda_runtime.h>
 #include <stdio.h>
 #include <iostream>
+#include <mpi.h>
 
 #define THREADS_PER_BLOCK 512
 
@@ -128,6 +129,69 @@ void spmv_streams(
     for (size_t i = 0; i < stream_num; i++) {
         CUDA_CHECK( cudaStreamDestroy(streams[i]) );
     }
+
+    // Free memory
+    CUDA_CHECK( cudaFree(d_out) );
+    CUDA_CHECK( cudaFree(d_arr) );
+    CUDA_CHECK( cudaFree(d_values) );
+    CUDA_CHECK( cudaFree(d_row_offset) );
+    CUDA_CHECK( cudaFree(d_cols) );
+}
+
+// TODO: needs Allgather on array
+// TODO: check kernel correctness
+// TODO: check MPI -> can we run CUDA directives with MPI? (last time was 8 kB max)
+void spmv_multi_horizontal(
+    float* out, float* arr, 
+    size_t* row_offset, size_t* cols, float* values, 
+    size_t rows, size_t num_values, const size_t* row_mapping
+) {
+    // Get rank and size
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    // Get device count
+    int device_count;
+    CUDA_CHECK( cudaGetDeviceCount(&device_count) );
+    int gpu = rank % device_count;
+    CUDA_CHECK( cudaSetDevice(gpu) );
+
+    float *d_out, *d_arr, *d_values;
+    size_t *d_row_offset, *d_cols;
+
+    // Data partitioning
+    size_t row_start = row_mapping[rank];
+    size_t row_end = row_mapping[rank + 1];
+    size_t row_count = row_end - row_start;
+    size_t value_start = row_offset[row_start];
+    size_t value_end = row_offset[row_end];
+    size_t value_count = value_end - value_start;
+
+    // Allocate device memory
+    CUDA_CHECK( cudaMalloc((void**)&d_out, row_count * sizeof(float)) );
+    CUDA_CHECK( cudaMalloc((void**)&d_arr, row_count * sizeof(float)) );
+    CUDA_CHECK( cudaMalloc((void**)&d_values, value_count * sizeof(float)) );
+    CUDA_CHECK( cudaMalloc((void**)&d_row_offset, (row_count + 1) * sizeof(size_t)) );
+    CUDA_CHECK( cudaMalloc((void**)&d_cols, value_count * sizeof(size_t)) );
+
+    // Copy data
+    CUDA_CHECK( cudaMemcpy(d_arr, arr + row_start, row_count * sizeof(float), cudaMemcpyHostToDevice) );
+    CUDA_CHECK( cudaMemcpy(d_values, values + value_start, value_count * sizeof(float), cudaMemcpyHostToDevice) );
+    CUDA_CHECK( cudaMemcpy(d_row_offset, row_offset + row_start, (row_count + 1) * sizeof(size_t), cudaMemcpyHostToDevice) );
+    CUDA_CHECK( cudaMemcpy(d_cols, cols + value_start, value_count * sizeof(size_t), cudaMemcpyHostToDevice) );
+
+    // Compute blocks
+    int blocks = (row_count + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
+
+    // Launch kernel
+    spmvKernel<<<blocks, THREADS_PER_BLOCK>>>(d_out, d_arr, d_row_offset, d_cols, d_values, row_count);
+    
+    CUDA_CHECK( cudaGetLastError() );
+    CUDA_CHECK( cudaDeviceSynchronize() );
+
+    // Copy result back to host
+    CUDA_CHECK( cudaMemcpy(out + row_start, d_out, row_count * sizeof(float), cudaMemcpyDeviceToHost) );
 
     // Free memory
     CUDA_CHECK( cudaFree(d_out) );

@@ -1,6 +1,9 @@
 #ifndef ERROR_CUH
 #define ERROR_CUH
 
+#include <cuda_runtime.h>
+#include <stdio.h>
+
 // CUDA error checking macro
 #define CUDA_CHECK(call) \
     do { \

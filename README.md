@@ -1,7 +1,25 @@
 # Internship Multi-GPU
 Repo to manage exercises for my internship at University of Trento on Multi-GPU architectures in CUDA
 
-## Exercises
+## First part - GEMM
+In folder `gemm/`
+
+Compile:
+```sh
+make
+```
+
+Run:
+```sh
+make run
+```
+
+Run on cluster:
+```sh
+sbatch run_cluster.sh
+```
+
+## Pre-Exercises
 1. [Matrix Sum](#matrix-sum): Matrix sum on multi-GPU
 2. [Reduction](#reduction): Reduction on multi-GPU using MPI
 3. [Streams](#streams): Array sum using cudaStreams for overlapping jobs

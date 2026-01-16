@@ -22,8 +22,8 @@ bool check_correctness(
 
 
 int main() {
-    int rows = 512;
-    int cols = 512;
+    int rows = 2048;
+    int cols = 2048;
     float min_value = 0;
     float max_value = 10;
 
@@ -42,12 +42,16 @@ int main() {
     std::vector<float> result_shared(rows * cols, 0.0f);
     benchmark("GEMM CUDA Shared Memory", gemm_shared_memory, result_shared.data(), a.data(), b.data(), rows, cols, rows, cols);
 
+    std::vector<float> result_tiling(rows * cols, 0.0f);
+    benchmark("GEMM CUDA Block Tiling", gemm_block_tiling, result_tiling.data(), a.data(), b.data(), rows, cols, rows, cols);
+
     // Check correctness
     bool correct = true;
     correct &= check_correctness("GEMM CUDA", result, result_naive);
     correct &= check_correctness("GEMM CUDA Coalescing", result, result_coalescing);
     correct &= check_correctness("GEMM CUDA Shared Memory", result, result_shared);
-
+    correct &= check_correctness("GEMM CUDA Block Tiling", result, result_tiling);
+    
     if (!correct) {
         return -1;
     }

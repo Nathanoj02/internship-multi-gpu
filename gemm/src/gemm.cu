@@ -6,6 +6,11 @@
 
 #define BLOCK_SIZE 32
 
+#define BM 64
+#define BN 64
+#define BK 8
+#define TM 8
+
 // -- Function declarations --
 void init_gemm(
     float** d_A, float** d_B, float** d_C,
@@ -82,46 +87,103 @@ void gemm_memory_coalescing_kernel(const float* A, const float* B, float* C, int
 __global__
 void gemm_shared_memory_kernel(const float* A, const float* B, float* C, int rows_a, int cols_a, int cols_b) {
     int cRow = blockIdx.y, cCol = blockIdx.x;
-    int threadRow = threadIdx.x / BLOCK_SIZE, threadCol = threadIdx.x % BLOCK_SIZE;
+    int threadRow = threadIdx.x / BLOCK_SIZE;
+    int threadCol = threadIdx.x % BLOCK_SIZE;
     
-    // Global position for this thread
-    int globalRow = cRow * BLOCK_SIZE + threadRow;
-    int globalCol = cCol * BLOCK_SIZE + threadCol;
+    __shared__ float As[BLOCK_SIZE * BLOCK_SIZE];
+    __shared__ float Bs[BLOCK_SIZE * BLOCK_SIZE];
     
-    __shared__ float As[BLOCK_SIZE * BLOCK_SIZE], Bs[BLOCK_SIZE * BLOCK_SIZE];
-
+    // Advance pointers to the starting position for this block
+    A += cRow * BLOCK_SIZE * cols_a;
+    B += cCol * BLOCK_SIZE;
+    C += cRow * BLOCK_SIZE * cols_b + cCol * BLOCK_SIZE;
+    
     float value = 0.0f;
     
-    for (int tileIdx = 0; tileIdx < (cols_a + BLOCK_SIZE - 1) / BLOCK_SIZE; tileIdx++) {
-        // Load tile from A with bounds checking
-        int aCol = tileIdx * BLOCK_SIZE + threadCol;
-        if (globalRow < rows_a && aCol < cols_a) {
-            As[threadRow * BLOCK_SIZE + threadCol] = A[globalRow * cols_a + aCol];
-        } else {
-            As[threadRow * BLOCK_SIZE + threadCol] = 0.0f;
-        }
-        
-        // Load tile from B with bounds checking
-        int bRow = tileIdx * BLOCK_SIZE + threadRow;
-        if (bRow < cols_a && globalCol < cols_b) {
-            Bs[threadRow * BLOCK_SIZE + threadCol] = B[bRow * cols_b + globalCol];
-        } else {
-            Bs[threadRow * BLOCK_SIZE + threadCol] = 0.0f;
-        }
+    for (int bkIdx = 0; bkIdx < cols_a; bkIdx += BLOCK_SIZE) {
+        // Load tiles into shared memory
+        As[threadRow * BLOCK_SIZE + threadCol] = A[threadRow * cols_a + threadCol];
+        Bs[threadRow * BLOCK_SIZE + threadCol] = B[threadRow * cols_b + threadCol];
         
         __syncthreads();
         
-        // Compute partial product for this tile
-        for (int k = 0; k < BLOCK_SIZE; k++) {
-            value += As[threadRow * BLOCK_SIZE + k] * Bs[k * BLOCK_SIZE + threadCol];
+        // Advance pointers for next iteration
+        A += BLOCK_SIZE;
+        B += BLOCK_SIZE * cols_b;
+        
+        // Compute using shared memory
+        for (int dotIdx = 0; dotIdx < BLOCK_SIZE; ++dotIdx) {
+            value += As[threadRow * BLOCK_SIZE + dotIdx] * Bs[dotIdx * BLOCK_SIZE + threadCol];
         }
         
         __syncthreads();
     }
     
-    // Write result with bounds checking
-    if (globalRow < rows_a && globalCol < cols_b) {
-        C[globalRow * cols_b + globalCol] = value;
+    C[threadRow * cols_b + threadCol] = value;
+}
+
+/**
+ * CUDA kernel to perform matrix multiplication using block tiling
+ * @param A Pointer to matrix A
+ * @param B Pointer to matrix B
+ * @param C Pointer to result matrix C
+ * @param rows_a Number of rows in matrix A
+ * @param cols_a Number of columns in matrix A (and rows in matrix B)
+ * @param cols_b Number of columns in matrix B
+ */
+__global__
+void gemm_block_tiling_kernel(const float* A, const float* B, float* C, int rows_a, int cols_a, int cols_b) {
+    int cRow = blockIdx.y, cCol = blockIdx.x;
+    
+    // Calculate thread's position within the block
+    int threadRow = threadIdx.x / (BK * TM);
+    int threadCol = threadIdx.x % BM;
+    
+    // Inner indices for loading data into shared memory
+    int innerRowA = threadIdx.x / BK;
+    int innerColA = threadIdx.x % BK;
+    int innerRowB = threadIdx.x / BM;
+    int innerColB = threadIdx.x % BM;
+    
+    __shared__ float As[BN * BK];
+    __shared__ float Bs[BK * BM];
+    
+    // Advance pointers to the starting position for this block
+    A += cRow * BN * cols_a;
+    B += cCol * BM;
+    C += cRow * BN * cols_b + cCol * BM;
+    
+    // Each thread accumulates TM results
+    float threadResults[TM] = {0.0f};
+    
+    // Loop over tiles along the K dimension
+    for (int bkIdx = 0; bkIdx < cols_a; bkIdx += BK) {
+        // Load tile from A into shared memory
+        As[innerRowA * BK + innerColA] = A[innerRowA * cols_a + innerColA];
+        
+        // Load tile from B into shared memory
+        Bs[innerRowB * BM + innerColB] = B[innerRowB * cols_b + innerColB];
+        
+        __syncthreads();
+        
+        // Advance pointers for next iteration
+        A += BK;
+        B += BK * cols_b;
+        
+        // Compute partial results for this tile
+        for (int dotIdx = 0; dotIdx < BK; ++dotIdx) {
+            float Btmp = Bs[dotIdx * BM + threadCol];
+            for (int resIdx = 0; resIdx < TM; ++resIdx) {
+                threadResults[resIdx] += As[(threadRow * TM + resIdx) * BK + dotIdx] * Btmp;
+            }
+        }
+        
+        __syncthreads();
+    }
+    
+    // Write results back to global memory
+    for (int resIdx = 0; resIdx < TM; ++resIdx) {
+        C[(threadRow * TM + resIdx) * cols_b + threadCol] = threadResults[resIdx];
     }
 }
 
@@ -193,6 +255,27 @@ void gemm_shared_memory(
     cleanup_gemm(d_A, d_B, d_C, result, rows_a, cols_b);
 }
 
+
+void gemm_block_tiling(
+    float* result, const float* A, const float* B, 
+    size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
+) {
+    float* d_A;
+    float* d_B;
+    float* d_C;
+
+    init_gemm(&d_A, &d_B, &d_C, A, B, rows_a, cols_a, rows_b, cols_b);
+
+    // Number of threads per block = (BN * BM) / TM
+    dim3 blockSize((BN * BM) / TM, 1, 1);
+    dim3 gridSize(CEIL_DIV(cols_b, BM), CEIL_DIV(rows_a, BN));
+
+    gemm_block_tiling_kernel<<<gridSize, blockSize>>>(d_A, d_B, d_C, rows_a, cols_a, cols_b);
+    CUDA_CHECK( cudaGetLastError() );
+    CUDA_CHECK( cudaDeviceSynchronize() );
+
+    cleanup_gemm(d_A, d_B, d_C, result, rows_a, cols_b);
+}
 
 /**
  * Initialize device memory and copy input matrices

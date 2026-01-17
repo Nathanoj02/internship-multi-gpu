@@ -45,12 +45,20 @@ int main() {
     std::vector<float> result_tiling(rows * cols, 0.0f);
     benchmark("GEMM CUDA Block Tiling", gemm_block_tiling, result_tiling.data(), a.data(), b.data(), rows, cols, rows, cols);
 
+    std::vector<float> result_2D_tiling(rows * cols, 0.0f);
+    benchmark("GEMM CUDA 2D Block Tiling", gemm_2D_block_tiling, result_2D_tiling.data(), a.data(), b.data(), rows, cols, rows, cols);
+
+    std::vector<float> result_warp_tiling(rows * cols, 0.0f);
+    benchmark("GEMM CUDA Warp Tiling", gemm_warp_tiling, result_warp_tiling.data(), a.data(), b.data(), rows, cols, rows, cols);
+
     // Check correctness
     bool correct = true;
     correct &= check_correctness("GEMM CUDA", result, result_naive);
     correct &= check_correctness("GEMM CUDA Coalescing", result, result_coalescing);
     correct &= check_correctness("GEMM CUDA Shared Memory", result, result_shared);
     correct &= check_correctness("GEMM CUDA Block Tiling", result, result_tiling);
+    correct &= check_correctness("GEMM CUDA 2D Block Tiling", result, result_2D_tiling);
+    correct &= check_correctness("GEMM CUDA Warp Tiling", result, result_warp_tiling);
     
     if (!correct) {
         return -1;

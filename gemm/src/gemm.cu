@@ -11,6 +11,30 @@
 #define BK 8
 #define TM 8
 
+#define BN2D 64
+#define BK2D 8
+#define BM2D 64
+#define TM2D 4
+#define TN2D 4
+
+#define BNWARP 64
+#define BKWARP 8
+#define BMWARP 64
+#define TMWARPS 2
+#define TNWARPS 2
+
+#define WARPNUM 16
+#define WARPSN 2
+#define WARPSM 8
+#define WN 32
+#define WM 8
+
+#define WARPSIZE 32
+#define WSUBN 16
+#define WSUBM 2
+#define WNITER 1
+#define WMITER 2
+
 // -- Function declarations --
 void init_gemm(
     float** d_A, float** d_B, float** d_C,
@@ -187,6 +211,213 @@ void gemm_block_tiling_kernel(const float* A, const float* B, float* C, int rows
     }
 }
 
+/**
+ * CUDA kernel to perform matrix multiplication using 2D block tiling
+ * Each thread computes TM2D x TN2D elements of the result matrix C
+ * @param A Pointer to matrix A
+ * @param B Pointer to matrix B
+ * @param C Pointer to result matrix C
+ * @param rows_a Number of rows in matrix A (N)
+ * @param cols_a Number of columns in matrix A (K)
+ * @param cols_b Number of columns in matrix B (M)
+ */
+__global__
+void gemm_2D_block_tiling_kernel(const float* A, const float* B, float* C, int rows_a, int cols_a, int cols_b) {
+    int cRow = blockIdx.y, cCol = blockIdx.x;
+    
+    // Thread positioning within block
+    int threadRow = threadIdx.x / (BM2D / TM2D);
+    int threadCol = threadIdx.x % (BM2D / TM2D);
+    
+    // Inner indices for loading data into shared memory
+    int innerRowA = threadIdx.x / BK2D;
+    int innerColA = threadIdx.x % BK2D;
+    int innerRowB = threadIdx.x / BM2D;
+    int innerColB = threadIdx.x % BM2D;
+    
+    // Stride for loading multiple rows
+    int strideA = blockDim.x / BK2D;
+    int strideB = blockDim.x / BM2D;
+    
+    __shared__ float As[BN2D * BK2D];
+    __shared__ float Bs[BK2D * BM2D];
+    
+    // Advance pointers to starting position for this block
+    A += cRow * BN2D * cols_a;
+    B += cCol * BM2D;
+    C += cRow * BN2D * cols_b + cCol * BM2D;
+    
+    // Each thread accumulates TM2D x TN2D results
+    float threadResults[TM2D * TN2D] = {0.0f};
+    float regM[TM2D] = {0.0f};
+    float regN[TN2D] = {0.0f};
+    
+    // Loop over tiles
+    for (int bkIdx = 0; bkIdx < cols_a; bkIdx += BK2D) {
+        // Load tile from A into shared memory (strided loads)
+        for (int loadOffset = 0; loadOffset < BN2D; loadOffset += strideA) {
+            As[(innerRowA + loadOffset) * BK2D + innerColA] = 
+                A[(innerRowA + loadOffset) * cols_a + innerColA];
+        }
+        
+        // Load tile from B into shared memory (strided loads)
+        for (int loadOffset = 0; loadOffset < BK2D; loadOffset += strideB) {
+            Bs[(innerRowB + loadOffset) * BM2D + innerColB] = 
+                B[(innerRowB + loadOffset) * cols_b + innerColB];
+        }
+        
+        __syncthreads();
+        
+        // Advance pointers for next iteration
+        A += BK2D;
+        B += BK2D * cols_b;
+        
+        // Compute using register tiling
+        for (int dotIdx = 0; dotIdx < BK2D; ++dotIdx) {
+            // Load TN2D elements from A into registers
+            for (int i = 0; i < TN2D; ++i) {
+                regN[i] = As[(threadRow * TN2D + i) * BK2D + dotIdx];
+            }
+            
+            // Load TM2D elements from B into registers
+            for (int i = 0; i < TM2D; ++i) {
+                regM[i] = Bs[dotIdx * BM2D + threadCol * TM2D + i];
+            }
+            
+            // Compute TM2D x TN2D results
+            for (int resIdxM = 0; resIdxM < TM2D; ++resIdxM) {
+                for (int resIdxN = 0; resIdxN < TN2D; ++resIdxN) {
+                    threadResults[resIdxN * TM2D + resIdxM] += regM[resIdxM] * regN[resIdxN];
+                }
+            }
+        }
+        
+        __syncthreads();
+    }
+    
+    // Write results back to global memory
+    for (int resIdxM = 0; resIdxM < TM2D; ++resIdxM) {
+        for (int resIdxN = 0; resIdxN < TN2D; ++resIdxN) {
+            C[(threadRow * TN2D + resIdxN) * cols_b + threadCol * TM2D + resIdxM] = 
+                threadResults[resIdxN * TM2D + resIdxM];
+        }
+    }
+}
+
+/**
+ * CUDA kernel to perform matrix multiplication using warp tiling
+ * Each warp computes a WN x WM tile, with each thread computing multiple elements
+ * @param A Pointer to matrix A
+ * @param B Pointer to matrix B
+ * @param C Pointer to result matrix C
+ * @param rows_a Number of rows in matrix A (N)
+ * @param cols_a Number of columns in matrix A (K)
+ * @param cols_b Number of columns in matrix B (M)
+ */
+__global__
+void gemm_warp_tiling_kernel(const float* A, const float* B, float* C, int rows_a, int cols_a, int cols_b) {
+    int cRow = blockIdx.y, cCol = blockIdx.x;
+    
+    // Indices for loading into shared memory
+    int innerRowA = threadIdx.x / BKWARP;
+    int innerColA = threadIdx.x % BKWARP;
+    int innerRowB = threadIdx.x / BMWARP;
+    int innerColB = threadIdx.x % BMWARP;
+    
+    // Warp identification
+    int warpNum = threadIdx.x / WARPSIZE;
+    int warpRow = warpNum / (BMWARP / WM);
+    int warpCol = warpNum % (BMWARP / WM);
+
+    // Thread position within warp
+    int warpId = threadIdx.x % WARPSIZE;
+    int threadRowInWarp = warpId / WSUBM;
+    int threadColInWarp = warpId % WSUBM;
+    
+    __shared__ float As[BNWARP * BKWARP];
+    __shared__ float Bs[BKWARP * BMWARP];
+    
+    // Advance pointers to starting position for this block
+    A += cRow * BNWARP * cols_a;
+    B += cCol * BMWARP;
+    C += cRow * BNWARP * cols_b + cCol * BMWARP;
+    
+    // Each thread accumulates (WNITER * TNWARPS) x (WMITER * TMWARPS) results
+    float threadResults[(WNITER * TNWARPS) * (WMITER * TMWARPS)] = {0.0f};
+    float regM[WMITER * TMWARPS] = {0.0f};
+    float regN[WNITER * TNWARPS] = {0.0f};
+    
+    // Loop over tiles
+    for (int bkIdx = 0; bkIdx < cols_a; bkIdx += BKWARP) {
+        // Load tiles into shared memory
+        As[innerRowA * BKWARP + innerColA] = A[innerRowA * cols_a + innerColA];
+        Bs[innerRowB * BMWARP + innerColB] = B[innerRowB * cols_b + innerColB];
+        
+        __syncthreads();
+        
+        // Advance pointers
+        A += BKWARP;
+        B += BKWARP * cols_b;
+        
+        // Compute using warp-level tiling
+        for (int dotIdx = 0; dotIdx < BKWARP; ++dotIdx) {
+            // Load from A into registers
+            for (int wSubRowIdx = 0; wSubRowIdx < WNITER; ++wSubRowIdx) {
+                for (int i = 0; i < TNWARPS; ++i) {
+                    regN[wSubRowIdx * TNWARPS + i] = 
+                        As[(warpRow * WN + wSubRowIdx * (WSUBN * TNWARPS) + 
+                            threadRowInWarp * TNWARPS + i) * BKWARP + dotIdx];
+                }
+            }
+            
+            // Load from B into registers
+            for (int wSubColIdx = 0; wSubColIdx < WMITER; ++wSubColIdx) {
+                for (int i = 0; i < TMWARPS; ++i) {
+                    regM[wSubColIdx * TMWARPS + i] = 
+                        Bs[dotIdx * BMWARP + warpCol * WM + wSubColIdx * (WSUBM * TMWARPS) + 
+                            threadColInWarp * TMWARPS + i];
+                }
+            }
+            
+            // Outer product computation
+            for (int wSubRowIdx = 0; wSubRowIdx < WNITER; ++wSubRowIdx) {
+                for (int wSubColIdx = 0; wSubColIdx < WMITER; ++wSubColIdx) {
+                    for (int resIdxM = 0; resIdxM < TMWARPS; ++resIdxM) {
+                        for (int resIdxN = 0; resIdxN < TNWARPS; ++resIdxN) {
+                            threadResults[(wSubRowIdx * TNWARPS + resIdxN) * (WMITER * TMWARPS) + 
+                                         (wSubColIdx * TMWARPS) + resIdxM] += 
+                                regM[wSubColIdx * TNWARPS + resIdxM] * regN[wSubRowIdx * TMWARPS + resIdxN];
+                        }
+                    }
+                }
+            }
+        }
+        
+        __syncthreads();
+    }
+    
+    // Write results back to global memory
+    for (int wSubRowIdx = 0; wSubRowIdx < WNITER; ++wSubRowIdx) {
+        for (int wSubColIdx = 0; wSubColIdx < WMITER; ++wSubColIdx) {
+            for (int resIdxN = 0; resIdxN < TNWARPS; ++resIdxN) {
+                for (int resIdxM = 0; resIdxM < TMWARPS; ++resIdxM) {
+                    int result_row = wSubRowIdx * TNWARPS + resIdxN;
+                    int result_col = wSubColIdx * TMWARPS + resIdxM;
+                    int result_index = result_row * (WMITER * TMWARPS) + result_col;
+                    float tmp = threadResults[result_index];
+                    
+                    int C_row = warpRow * WN + wSubRowIdx * (WSUBN * TNWARPS) + 
+                                threadRowInWarp * TNWARPS + resIdxN;
+                    int C_col = warpCol * WM + wSubColIdx * (WSUBM * TMWARPS) + 
+                                threadColInWarp * TMWARPS + resIdxM;
+                    
+                    C[C_row * cols_b + C_col] = tmp;
+                }
+            }
+        }
+    }
+}
+
 
 // -- Host Functions --
 void gemm_naive(
@@ -271,6 +502,48 @@ void gemm_block_tiling(
     dim3 gridSize(CEIL_DIV(cols_b, BM), CEIL_DIV(rows_a, BN));
 
     gemm_block_tiling_kernel<<<gridSize, blockSize>>>(d_A, d_B, d_C, rows_a, cols_a, cols_b);
+    CUDA_CHECK( cudaGetLastError() );
+    CUDA_CHECK( cudaDeviceSynchronize() );
+
+    cleanup_gemm(d_A, d_B, d_C, result, rows_a, cols_b);
+}
+
+
+void gemm_2D_block_tiling(
+    float* result, const float* A, const float* B, 
+    size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
+) {
+    float* d_A;
+    float* d_B;
+    float* d_C;
+
+    init_gemm(&d_A, &d_B, &d_C, A, B, rows_a, cols_a, rows_b, cols_b);
+
+    dim3 blockSize((BN2D * BM2D) / (TM2D * TN2D));
+    dim3 gridSize(CEIL_DIV(cols_b, BM2D), CEIL_DIV(rows_a, BN2D));
+
+    gemm_2D_block_tiling_kernel<<<gridSize, blockSize>>>(d_A, d_B, d_C, rows_a, cols_a, cols_b);
+    CUDA_CHECK( cudaGetLastError() );
+    CUDA_CHECK( cudaDeviceSynchronize() );
+
+    cleanup_gemm(d_A, d_B, d_C, result, rows_a, cols_b);
+}
+
+
+void gemm_warp_tiling(
+    float* result, const float* A, const float* B, 
+    size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
+) {
+    float* d_A;
+    float* d_B;
+    float* d_C;
+
+    init_gemm(&d_A, &d_B, &d_C, A, B, rows_a, cols_a, rows_b, cols_b);
+
+    dim3 blockSize(BNWARP * BKWARP);
+    dim3 gridSize(CEIL_DIV(cols_b, BMWARP), CEIL_DIV(rows_a, BNWARP));
+
+    gemm_warp_tiling_kernel<<<gridSize, blockSize>>>(d_A, d_B, d_C, rows_a, cols_a, cols_b);
     CUDA_CHECK( cudaGetLastError() );
     CUDA_CHECK( cudaDeviceSynchronize() );
 

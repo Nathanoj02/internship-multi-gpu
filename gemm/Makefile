@@ -12,7 +12,7 @@ BIN_DIR := bin
 TARGET := $(BIN_DIR)/gemm
 
 # Source files
-CU_SOURCES := $(wildcard $(SRC_DIR)/*.cu)
+CU_SOURCES := $(wildcard $(SRC_DIR)/*.cu) $(wildcard $(SRC_DIR)/kernels/*.cu)
 CPP_SOURCES := $(wildcard $(SRC_DIR)/*.cpp)
 
 # Object files
@@ -41,6 +41,7 @@ $(TARGET): $(OBJECTS) | $(BIN_DIR)
 
 # Compile CUDA source files
 $(OBJ_DIR)/%.cu.o: $(SRC_DIR)/%.cu | $(OBJ_DIR)
+	@mkdir -p $(dir $@)
 	$(NVCC) $(NVCC_FLAGS) -c $< -o $@
 
 # Compile C++ source files

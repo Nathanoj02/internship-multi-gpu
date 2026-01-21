@@ -1,5 +1,7 @@
-#ifndef GEMM_CUDA_HPP
-#define GEMM_CUDA_HPP
+#ifndef GEMM_CUDA_CUH
+#define GEMM_CUDA_CUH
+
+#include "dtype.hpp"
 
 /**
  * Multiplies two matrices using GPU
@@ -12,7 +14,7 @@
  * @param cols_b Number of columns in the second matrix
  */
 void gemm_naive(
-    float* result, const float* A, const float* B, 
+    dtype* result, const dtype* A, const dtype* B, 
     size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
 );
 
@@ -27,7 +29,7 @@ void gemm_naive(
  * @param cols_b Number of columns in the second matrix
  */
 void gemm_memory_coalescing(
-    float* result, const float* A, const float* B, 
+    dtype* result, const dtype* A, const dtype* B, 
     size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
 );
 
@@ -42,7 +44,7 @@ void gemm_memory_coalescing(
  * @param cols_b Number of columns in the second matrix
  */
 void gemm_shared_memory(
-    float* result, const float* A, const float* B, 
+    dtype* result, const dtype* A, const dtype* B, 
     size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
 );
 
@@ -57,7 +59,7 @@ void gemm_shared_memory(
  * @param cols_b Number of columns in the second matrix
  */
 void gemm_block_tiling(
-    float* result, const float* A, const float* B, 
+    dtype* result, const dtype* A, const dtype* B, 
     size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
 );
 
@@ -72,7 +74,7 @@ void gemm_block_tiling(
  * @param cols_b Number of columns in the second matrix
  */
 void gemm_2D_block_tiling(
-    float* result, const float* A, const float* B, 
+    dtype* result, const dtype* A, const dtype* B, 
     size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
 );
 
@@ -87,8 +89,8 @@ void gemm_2D_block_tiling(
  * @param cols_b Number of columns in the second matrix
  */
 void gemm_warp_tiling(
-    float* result, const float* A, const float* B, 
+    dtype* result, const dtype* A, const dtype* B, 
     size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
 );
 
-#endif // GEMM_CUDA_HPP
+#endif // GEMM_CUDA_CUH

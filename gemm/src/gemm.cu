@@ -1,4 +1,5 @@
 #include "gemm.cuh"
+#include "dtype.hpp"
 #include "../utils/error.cuh"
 #include <cuda_runtime.h>
 
@@ -37,14 +38,14 @@
 
 // -- Function declarations --
 void init_gemm(
-    float** d_A, float** d_B, float** d_C,
-    const float* A, const float* B,
+    dtype** d_A, dtype** d_B, dtype** d_C,
+    const dtype* A, const dtype* B,
     size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
 );
 
 void cleanup_gemm(
-    float* d_A, float* d_B, float* d_C,
-    float* result, size_t rows_a, size_t cols_b
+    dtype* d_A, dtype* d_B, dtype* d_C,
+    dtype* result, size_t rows_a, size_t cols_b
 );
 
 // -- CUDA Kernels --
@@ -59,7 +60,7 @@ void cleanup_gemm(
  * @param cols_b Number of columns in matrix B
  */
 __global__
-void gemm_naive_kernel(const float* A, const float* B, float* C, int rows_a, int cols_a, int cols_b) {
+void gemm_naive_kernel(const dtype* A, const dtype* B, dtype* C, int rows_a, int cols_a, int cols_b) {
     int row = blockIdx.x * blockDim.x + threadIdx.x;
     int col = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -67,7 +68,7 @@ void gemm_naive_kernel(const float* A, const float* B, float* C, int rows_a, int
         return;
     }
 
-    float value = 0.0f;
+    dtype value = DTYPE_ZERO;
     for (int k = 0; k < cols_a; ++k) {
         value += A[row * cols_a + k] * B[k * cols_b + col];
     }
@@ -84,7 +85,7 @@ void gemm_naive_kernel(const float* A, const float* B, float* C, int rows_a, int
  * @param cols_b Number of columns in matrix B
  */
 __global__
-void gemm_memory_coalescing_kernel(const float* A, const float* B, float* C, int rows_a, int cols_a, int cols_b) {
+void gemm_memory_coalescing_kernel(const dtype* A, const dtype* B, dtype* C, int rows_a, int cols_a, int cols_b) {
     int row = blockIdx.y * BLOCK_SIZE + (threadIdx.x / BLOCK_SIZE);
     int col = blockIdx.x * BLOCK_SIZE + (threadIdx.x % BLOCK_SIZE);
 
@@ -92,7 +93,7 @@ void gemm_memory_coalescing_kernel(const float* A, const float* B, float* C, int
         return;
     }
 
-    float value = 0.0f;
+    dtype value = DTYPE_ZERO;
     for (int k = 0; k < cols_a; ++k) {
         value += A[row * cols_a + k] * B[k * cols_b + col];
     }
@@ -109,21 +110,21 @@ void gemm_memory_coalescing_kernel(const float* A, const float* B, float* C, int
  * @param cols_b Number of columns in matrix B
  */
 __global__
-void gemm_shared_memory_kernel(const float* A, const float* B, float* C, int rows_a, int cols_a, int cols_b) {
+void gemm_shared_memory_kernel(const dtype* A, const dtype* B, dtype* C, int rows_a, int cols_a, int cols_b) {
     int cRow = blockIdx.y, cCol = blockIdx.x;
     int threadRow = threadIdx.x / BLOCK_SIZE;
     int threadCol = threadIdx.x % BLOCK_SIZE;
     
-    __shared__ float As[BLOCK_SIZE * BLOCK_SIZE];
-    __shared__ float Bs[BLOCK_SIZE * BLOCK_SIZE];
+    __shared__ dtype As[BLOCK_SIZE * BLOCK_SIZE];
+    __shared__ dtype Bs[BLOCK_SIZE * BLOCK_SIZE];
     
     // Advance pointers to the starting position for this block
     A += cRow * BLOCK_SIZE * cols_a;
     B += cCol * BLOCK_SIZE;
     C += cRow * BLOCK_SIZE * cols_b + cCol * BLOCK_SIZE;
-    
-    float value = 0.0f;
-    
+
+    dtype value = DTYPE_ZERO;
+
     for (int bkIdx = 0; bkIdx < cols_a; bkIdx += BLOCK_SIZE) {
         // Load tiles into shared memory
         As[threadRow * BLOCK_SIZE + threadCol] = A[threadRow * cols_a + threadCol];
@@ -156,7 +157,7 @@ void gemm_shared_memory_kernel(const float* A, const float* B, float* C, int row
  * @param cols_b Number of columns in matrix B
  */
 __global__
-void gemm_block_tiling_kernel(const float* A, const float* B, float* C, int rows_a, int cols_a, int cols_b) {
+void gemm_block_tiling_kernel(const dtype* A, const dtype* B, dtype* C, int rows_a, int cols_a, int cols_b) {
     int cRow = blockIdx.y, cCol = blockIdx.x;
     
     // Calculate thread's position within the block
@@ -169,8 +170,8 @@ void gemm_block_tiling_kernel(const float* A, const float* B, float* C, int rows
     int innerRowB = threadIdx.x / BM;
     int innerColB = threadIdx.x % BM;
     
-    __shared__ float As[BN * BK];
-    __shared__ float Bs[BK * BM];
+    __shared__ dtype As[BN * BK];
+    __shared__ dtype Bs[BK * BM];
     
     // Advance pointers to the starting position for this block
     A += cRow * BN * cols_a;
@@ -178,7 +179,8 @@ void gemm_block_tiling_kernel(const float* A, const float* B, float* C, int rows
     C += cRow * BN * cols_b + cCol * BM;
     
     // Each thread accumulates TM results
-    float threadResults[TM] = {0.0f};
+    dtype threadResults[TM];
+    for (int i = 0; i < TM; ++i) threadResults[i] = DTYPE_ZERO;
     
     // Loop over tiles along the K dimension
     for (int bkIdx = 0; bkIdx < cols_a; bkIdx += BK) {
@@ -196,7 +198,7 @@ void gemm_block_tiling_kernel(const float* A, const float* B, float* C, int rows
         
         // Compute partial results for this tile
         for (int dotIdx = 0; dotIdx < BK; ++dotIdx) {
-            float Btmp = Bs[dotIdx * BM + threadCol];
+            dtype Btmp = Bs[dotIdx * BM + threadCol];
             for (int resIdx = 0; resIdx < TM; ++resIdx) {
                 threadResults[resIdx] += As[(threadRow * TM + resIdx) * BK + dotIdx] * Btmp;
             }
@@ -222,7 +224,7 @@ void gemm_block_tiling_kernel(const float* A, const float* B, float* C, int rows
  * @param cols_b Number of columns in matrix B (M)
  */
 __global__
-void gemm_2D_block_tiling_kernel(const float* A, const float* B, float* C, int rows_a, int cols_a, int cols_b) {
+void gemm_2D_block_tiling_kernel(const dtype* A, const dtype* B, dtype* C, int rows_a, int cols_a, int cols_b) {
     int cRow = blockIdx.y, cCol = blockIdx.x;
     
     // Thread positioning within block
@@ -239,8 +241,8 @@ void gemm_2D_block_tiling_kernel(const float* A, const float* B, float* C, int r
     int strideA = blockDim.x / BK2D;
     int strideB = blockDim.x / BM2D;
     
-    __shared__ float As[BN2D * BK2D];
-    __shared__ float Bs[BK2D * BM2D];
+    __shared__ dtype As[BN2D * BK2D];
+    __shared__ dtype Bs[BK2D * BM2D];
     
     // Advance pointers to starting position for this block
     A += cRow * BN2D * cols_a;
@@ -248,9 +250,12 @@ void gemm_2D_block_tiling_kernel(const float* A, const float* B, float* C, int r
     C += cRow * BN2D * cols_b + cCol * BM2D;
     
     // Each thread accumulates TM2D x TN2D results
-    float threadResults[TM2D * TN2D] = {0.0f};
-    float regM[TM2D] = {0.0f};
-    float regN[TN2D] = {0.0f};
+    dtype threadResults[TM2D * TN2D];
+    dtype regM[TM2D];
+    dtype regN[TN2D];
+    for (int i = 0; i < TM2D * TN2D; ++i) threadResults[i] = DTYPE_ZERO;
+    for (int i = 0; i < TM2D; ++i) regM[i] = DTYPE_ZERO;
+    for (int i = 0; i < TN2D; ++i) regN[i] = DTYPE_ZERO;
     
     // Loop over tiles
     for (int bkIdx = 0; bkIdx < cols_a; bkIdx += BK2D) {
@@ -315,7 +320,7 @@ void gemm_2D_block_tiling_kernel(const float* A, const float* B, float* C, int r
  * @param cols_b Number of columns in matrix B (M)
  */
 __global__
-void gemm_warp_tiling_kernel(const float* A, const float* B, float* C, int rows_a, int cols_a, int cols_b) {
+void gemm_warp_tiling_kernel(const dtype* A, const dtype* B, dtype* C, int rows_a, int cols_a, int cols_b) {
     int cRow = blockIdx.y, cCol = blockIdx.x;
     
     // Indices for loading into shared memory
@@ -334,8 +339,8 @@ void gemm_warp_tiling_kernel(const float* A, const float* B, float* C, int rows_
     int threadRowInWarp = warpId / WSUBM;
     int threadColInWarp = warpId % WSUBM;
     
-    __shared__ float As[BNWARP * BKWARP];
-    __shared__ float Bs[BKWARP * BMWARP];
+    __shared__ dtype As[BNWARP * BKWARP];
+    __shared__ dtype Bs[BKWARP * BMWARP];
     
     // Advance pointers to starting position for this block
     A += cRow * BNWARP * cols_a;
@@ -343,9 +348,12 @@ void gemm_warp_tiling_kernel(const float* A, const float* B, float* C, int rows_
     C += cRow * BNWARP * cols_b + cCol * BMWARP;
     
     // Each thread accumulates (WNITER * TNWARPS) x (WMITER * TMWARPS) results
-    float threadResults[(WNITER * TNWARPS) * (WMITER * TMWARPS)] = {0.0f};
-    float regM[WMITER * TMWARPS] = {0.0f};
-    float regN[WNITER * TNWARPS] = {0.0f};
+    dtype threadResults[(WNITER * TNWARPS) * (WMITER * TMWARPS)];
+    dtype regM[WMITER * TMWARPS];
+    dtype regN[WNITER * TNWARPS];
+    for (int i = 0; i < (WNITER * TNWARPS) * (WMITER * TMWARPS); ++i) threadResults[i] = DTYPE_ZERO;
+    for (int i = 0; i < WMITER * TMWARPS; ++i) regM[i] = DTYPE_ZERO;
+    for (int i = 0; i < WNITER * TNWARPS; ++i) regN[i] = DTYPE_ZERO;
     
     // Loop over tiles
     for (int bkIdx = 0; bkIdx < cols_a; bkIdx += BKWARP) {
@@ -404,7 +412,7 @@ void gemm_warp_tiling_kernel(const float* A, const float* B, float* C, int rows_
                     int result_row = wSubRowIdx * TNWARPS + resIdxN;
                     int result_col = wSubColIdx * TMWARPS + resIdxM;
                     int result_index = result_row * (WMITER * TMWARPS) + result_col;
-                    float tmp = threadResults[result_index];
+                    dtype tmp = threadResults[result_index];
                     
                     int C_row = warpRow * WN + wSubRowIdx * (WSUBN * TNWARPS) + 
                                 threadRowInWarp * TNWARPS + resIdxN;
@@ -421,12 +429,12 @@ void gemm_warp_tiling_kernel(const float* A, const float* B, float* C, int rows_
 
 // -- Host Functions --
 void gemm_naive(
-    float* result, const float* A, const float* B, 
+    dtype* result, const dtype* A, const dtype* B, 
     size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
 ) {
-    float* d_A;
-    float* d_B;
-    float* d_C;
+    dtype* d_A;
+    dtype* d_B;
+    dtype* d_C;
 
     // Initialize and copy data to device
     init_gemm(&d_A, &d_B, &d_C, A, B, rows_a, cols_a, rows_b, cols_b);
@@ -446,12 +454,12 @@ void gemm_naive(
 
 
 void gemm_memory_coalescing(
-    float* result, const float* A, const float* B, 
+    dtype* result, const dtype* A, const dtype* B, 
     size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
 ) {
-    float* d_A;
-    float* d_B;
-    float* d_C;
+    dtype* d_A;
+    dtype* d_B;
+    dtype* d_C;
 
     init_gemm(&d_A, &d_B, &d_C, A, B, rows_a, cols_a, rows_b, cols_b);
 
@@ -467,12 +475,12 @@ void gemm_memory_coalescing(
 
 
 void gemm_shared_memory(
-    float* result, const float* A, const float* B, 
+    dtype* result, const dtype* A, const dtype* B, 
     size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
 ) {
-    float* d_A;
-    float* d_B;
-    float* d_C;
+    dtype* d_A;
+    dtype* d_B;
+    dtype* d_C;
 
     init_gemm(&d_A, &d_B, &d_C, A, B, rows_a, cols_a, rows_b, cols_b);
 
@@ -488,12 +496,12 @@ void gemm_shared_memory(
 
 
 void gemm_block_tiling(
-    float* result, const float* A, const float* B, 
+    dtype* result, const dtype* A, const dtype* B, 
     size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
 ) {
-    float* d_A;
-    float* d_B;
-    float* d_C;
+    dtype* d_A;
+    dtype* d_B;
+    dtype* d_C;
 
     init_gemm(&d_A, &d_B, &d_C, A, B, rows_a, cols_a, rows_b, cols_b);
 
@@ -510,12 +518,12 @@ void gemm_block_tiling(
 
 
 void gemm_2D_block_tiling(
-    float* result, const float* A, const float* B, 
+    dtype* result, const dtype* A, const dtype* B, 
     size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
 ) {
-    float* d_A;
-    float* d_B;
-    float* d_C;
+    dtype* d_A;
+    dtype* d_B;
+    dtype* d_C;
 
     init_gemm(&d_A, &d_B, &d_C, A, B, rows_a, cols_a, rows_b, cols_b);
 
@@ -531,12 +539,12 @@ void gemm_2D_block_tiling(
 
 
 void gemm_warp_tiling(
-    float* result, const float* A, const float* B, 
+    dtype* result, const dtype* A, const dtype* B, 
     size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
 ) {
-    float* d_A;
-    float* d_B;
-    float* d_C;
+    dtype* d_A;
+    dtype* d_B;
+    dtype* d_C;
 
     init_gemm(&d_A, &d_B, &d_C, A, B, rows_a, cols_a, rows_b, cols_b);
 
@@ -554,8 +562,8 @@ void gemm_warp_tiling(
  * Initialize device memory and copy input matrices
  */
 void init_gemm(
-    float** d_A, float** d_B, float** d_C,
-    const float* A, const float* B,
+    dtype** d_A, dtype** d_B, dtype** d_C,
+    const dtype* A, const dtype* B,
     size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
 ) {
     // Dimension check
@@ -565,9 +573,9 @@ void init_gemm(
         return;
     }
 
-    size_t size_a = rows_a * cols_a * sizeof(float);
-    size_t size_b = rows_b * cols_b * sizeof(float);
-    size_t size_res = rows_a * cols_b * sizeof(float);
+    size_t size_a = rows_a * cols_a * sizeof(dtype);
+    size_t size_b = rows_b * cols_b * sizeof(dtype);
+    size_t size_res = rows_a * cols_b * sizeof(dtype);
 
     CUDA_CHECK( cudaMalloc((void**)d_A, size_a) );
     CUDA_CHECK( cudaMalloc((void**)d_B, size_b) );
@@ -581,10 +589,10 @@ void init_gemm(
  * Copy result back to host and free device memory
  */
 void cleanup_gemm(
-    float* d_A, float* d_B, float* d_C,
-    float* result, size_t rows_a, size_t cols_b
+    dtype* d_A, dtype* d_B, dtype* d_C,
+    dtype* result, size_t rows_a, size_t cols_b
 ) {
-    size_t size_res = rows_a * cols_b * sizeof(float);
+    size_t size_res = rows_a * cols_b * sizeof(dtype);
 
     CUDA_CHECK( cudaMemcpy(result, d_C, size_res, cudaMemcpyDeviceToHost) );
 

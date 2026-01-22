@@ -10,3 +10,6 @@ sync_to_cluster.sh
 
 # Datasets
 data/
+
+# Benchmarks
+benchmark_results/

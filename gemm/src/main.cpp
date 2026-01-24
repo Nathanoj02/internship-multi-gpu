@@ -38,6 +38,10 @@ int main() {
     std::vector<dtype> a_gpu = float_to_dtype_vec(a);
     std::vector<dtype> b_gpu = float_to_dtype_vec(b);
 
+    // Convert to half for tensor core
+    std::vector<half> a_half = float_to_half_vec(a);
+    std::vector<half> b_half = float_to_half_vec(b);
+
     // GPU computations
     std::vector<dtype> result_naive_gpu(rows * cols, DTYPE_ZERO);
     benchmark("GEMM CUDA", gemm_naive, result_naive_gpu.data(), a_gpu.data(), b_gpu.data(), rows, cols, rows, cols);
@@ -57,6 +61,9 @@ int main() {
     std::vector<dtype> result_warp_tiling_gpu(rows * cols, DTYPE_ZERO);
     benchmark("GEMM CUDA Warp Tiling", gemm_warp_tiling, result_warp_tiling_gpu.data(), a_gpu.data(), b_gpu.data(), rows, cols, rows, cols);
 
+    std::vector<float> result_tensor_gpu(rows * cols, 0.0f);
+    benchmark("GEMM CUDA Tensor Core", gemm_tensor_naive, result_tensor_gpu.data(), a_half.data(), b_half.data(), rows, cols, rows, cols);
+
     // Convert GPU results back to float for comparison
     std::vector<float> result_naive = dtype_to_float_vec(result_naive_gpu);
     std::vector<float> result_coalescing = dtype_to_float_vec(result_coalescing_gpu);
@@ -72,6 +79,7 @@ int main() {
     check_difference("GEMM CUDA Block Tiling", result, result_tiling);
     check_difference("GEMM CUDA 2D Block Tiling", result, result_2D_tiling);
     check_difference("GEMM CUDA Warp Tiling", result, result_warp_tiling);
+    check_difference("GEMM CUDA Tensor Core", result, result_tensor_gpu);
     
     return 0;
 }

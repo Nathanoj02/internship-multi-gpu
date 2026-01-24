@@ -6,10 +6,7 @@
 // Toggle: 0 = float, 1 = half
 #define USE_HALF 0
 
-// Only include CUDA FP16 header when needed
-#if USE_HALF || defined(__CUDACC__)
-    #include <cuda_fp16.h>
-#endif
+#include <cuda_fp16.h>
 
 #if USE_HALF
     using dtype = half;
@@ -47,6 +44,14 @@ inline std::vector<float> dtype_to_float_vec(const std::vector<dtype>& v) {
     std::vector<float> result(v.size());
     for (size_t i = 0; i < v.size(); ++i) {
         result[i] = dtype_to_float(v[i]);
+    }
+    return result;
+}
+
+inline std::vector<half> float_to_half_vec(const std::vector<float>& v) {
+    std::vector<half> result(v.size());
+    for (size_t i = 0; i < v.size(); ++i) {
+        result[i] = __float2half(v[i]);
     }
     return result;
 }

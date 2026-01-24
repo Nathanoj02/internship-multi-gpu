@@ -9,6 +9,7 @@
 #include "kernels/4_kernel_block_tiling.cuh"
 #include "kernels/5_kernel_2D_block_tiling.cuh"
 #include "kernels/6_kernel_warp_tiling.cuh"
+#include "kernels/7_kernel_tensor_naive.cuh"
 
 
 // -- Function declarations --
@@ -21,6 +22,17 @@ void init_gemm(
 void cleanup_gemm(
     dtype* d_A, dtype* d_B, dtype* d_C,
     dtype* result, size_t rows_a, size_t cols_b
+);
+
+void init_gemm_tensor(
+    half** d_A, half** d_B, float** d_C,
+    const half* A, const half* B,
+    size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
+);
+
+void cleanup_gemm_tensor(
+    half* d_A, half* d_B, float* d_C,
+    float* result, size_t rows_a, size_t cols_b
 );
 
 // -- Host Functions --
@@ -154,6 +166,27 @@ void gemm_warp_tiling(
     cleanup_gemm(d_A, d_B, d_C, result, rows_a, cols_b);
 }
 
+void gemm_tensor_naive(
+    float* result, const half* A, const half* B, 
+    size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
+) {
+    half* d_A;
+    half* d_B;
+    float* d_C;
+
+    init_gemm_tensor(&d_A, &d_B, &d_C, A, B, rows_a, cols_a, rows_b, cols_b);
+
+    // Kernel execution
+    dim3 dim_block(BLOCK_SIZE, 1);
+    dim3 dim_grid(rows_a / WMMA_M, cols_b / WMMA_N);
+
+    gemm_tensor_naive_kernel<<<dim_grid, dim_block>>>(d_A, d_B, d_C, rows_a, cols_a, cols_b);
+    CUDA_CHECK( cudaGetLastError() );
+    CUDA_CHECK( cudaDeviceSynchronize() );
+
+    cleanup_gemm_tensor(d_A, d_B, d_C, result, rows_a, cols_b);
+}
+
 /**
  * Initialize device memory and copy input matrices
  */
@@ -189,6 +222,49 @@ void cleanup_gemm(
     dtype* result, size_t rows_a, size_t cols_b
 ) {
     size_t size_res = rows_a * cols_b * sizeof(dtype);
+
+    CUDA_CHECK( cudaMemcpy(result, d_C, size_res, cudaMemcpyDeviceToHost) );
+
+    CUDA_CHECK( cudaFree(d_A) );
+    CUDA_CHECK( cudaFree(d_B) );
+    CUDA_CHECK( cudaFree(d_C) );
+}
+
+/**
+ * Initialize device memory and copy input matrices for half precision
+ */
+void init_gemm_tensor(
+    half** d_A, half** d_B, float** d_C,
+    const half* A, const half* B,
+    size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
+) {
+    // Dimension check
+    if (cols_a != rows_b) {
+        fprintf(stderr, "Error: Matrix dimensions don't match for multiplication. "
+                "A is %zux%zu, B is %zux%zu\n", rows_a, cols_a, rows_b, cols_b);
+        return;
+    }
+
+    size_t size_a = rows_a * cols_a * sizeof(half);
+    size_t size_b = rows_b * cols_b * sizeof(half);
+    size_t size_res = rows_a * cols_b * sizeof(float);
+
+    CUDA_CHECK( cudaMalloc((void**)d_A, size_a) );
+    CUDA_CHECK( cudaMalloc((void**)d_B, size_b) );
+    CUDA_CHECK( cudaMalloc((void**)d_C, size_res) );
+
+    CUDA_CHECK( cudaMemcpy(*d_A, A, size_a, cudaMemcpyHostToDevice) );
+    CUDA_CHECK( cudaMemcpy(*d_B, B, size_b, cudaMemcpyHostToDevice) );
+}
+
+/**
+ * Copy result back to host and free device memory for half precision
+ */
+void cleanup_gemm_tensor(
+    half* d_A, half* d_B, float* d_C,
+    float* result, size_t rows_a, size_t cols_b
+) {
+    size_t size_res = rows_a * cols_b * sizeof(float);
 
     CUDA_CHECK( cudaMemcpy(result, d_C, size_res, cudaMemcpyDeviceToHost) );
 

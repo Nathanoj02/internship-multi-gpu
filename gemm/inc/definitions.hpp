@@ -34,4 +34,9 @@
 #define WNITER 1
 #define WMITER 2
 
+// For tensor core
+#define WMMA_M 16   // Number rows in tiles of A and C
+#define WMMA_N 16   // Number cols in tiles of B and C
+#define WMMA_K 16   // Number cols in tiles of A or rows in tiles of B
+
 #endif // DEFINITIONS_HPP

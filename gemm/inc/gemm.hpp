@@ -10,7 +10,7 @@
  * @param min_value Minimum value for random floats
  * @param max_value Maximum value for random floats
  */
-std::vector<float> generate_matrix(int rows, int cols, float min_value, float max_value);
+std::vector<float> generate_matrix (int rows, int cols, float min_value, float max_value);
 
 /**
  * Multiplies two matrices using CPU
@@ -22,7 +22,7 @@ std::vector<float> generate_matrix(int rows, int cols, float min_value, float ma
  * @param rows_b Number of rows in the second matrix
  * @param cols_b Number of columns in the second matrix
  */
-void gemm_cpu(
+void gemm_cpu (
     std::vector<float>& result,
     const std::vector<float>& a, const std::vector<float>& b, 
     int rows_a, int cols_a, int rows_b, int cols_b

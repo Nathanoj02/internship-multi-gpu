@@ -1,7 +1,29 @@
-#include "kernels/5_kernel_2D_block_tiling.cuh"
-#include "definitions.hpp"
 #include <cuda_runtime.h>
+#include "kernels/5_kernel_2D_block_tiling.cuh"
+#include "gemm.cuh"
+#include "../../utils/error.cuh"
 
+#define CEIL_DIV(x, y) (((x) + (y) -1) / (y))
+
+template <
+    size_t BN2D, size_t BK2D, size_t BM2D,
+    size_t TM2D, size_t TN2D
+>
+/**
+ * CUDA kernel to perform matrix multiplication using 2D block tiling
+ * Each thread computes TM2D x TN2D elements of the result matrix C
+ * @tparam BN2D The threadblock size for rows of matrix A
+ * @tparam BK2D The threadblock size for columns of matrix A / rows of matrix B
+ * @tparam BM2D The threadblock size for columns of matrix B
+ * @tparam TM2D Number of rows computed by each thread
+ * @tparam TN2D Number of columns computed by each thread
+ * @param A Pointer to matrix A
+ * @param B Pointer to matrix B
+ * @param C Pointer to result matrix C
+ * @param rows_a Number of rows in matrix A (N)
+ * @param cols_a Number of columns in matrix A (K)
+ * @param cols_b Number of columns in matrix B (M)
+ */
 __global__ void gemm_2D_block_tiling_kernel (
     const dtype* A, const dtype* B, dtype* C,
     int rows_a, int cols_a, int cols_b
@@ -88,4 +110,31 @@ __global__ void gemm_2D_block_tiling_kernel (
                 threadResults[resIdxN * TM2D + resIdxM];
         }
     }
+}
+
+
+void gemm_2D_block_tiling (
+    dtype* result, const dtype* A, const dtype* B, 
+    size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
+) {
+    constexpr size_t BN2D = 64;
+    constexpr size_t BK2D = 8;
+    constexpr size_t BM2D = 64;
+    constexpr size_t TM2D = 4;
+    constexpr size_t TN2D = 4;
+
+    dtype* d_A;
+    dtype* d_B;
+    dtype* d_C;
+
+    init_gemm(&d_A, &d_B, &d_C, A, B, rows_a, cols_a, rows_b, cols_b);
+
+    dim3 blockSize((BN2D * BM2D) / (TM2D * TN2D));
+    dim3 gridSize(CEIL_DIV(cols_b, BM2D), CEIL_DIV(rows_a, BN2D));
+
+    gemm_2D_block_tiling_kernel<BN2D, BK2D, BM2D, TM2D, TN2D><<<gridSize, blockSize>>>(d_A, d_B, d_C, rows_a, cols_a, cols_b);
+    CUDA_CHECK( cudaGetLastError() );
+    CUDA_CHECK( cudaDeviceSynchronize() );
+
+    cleanup_gemm(d_A, d_B, d_C, result, rows_a, cols_b);
 }

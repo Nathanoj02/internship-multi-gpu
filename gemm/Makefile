@@ -52,16 +52,13 @@ $(TARGET): $(COMMON_OBJECTS) $(MAIN_OBJ) | $(BIN_DIR)
 $(TARGET_WARP): $(COMMON_OBJECTS) $(MAIN_WARP_OBJ) | $(BIN_DIR)
 	$(NVCC) $(NVCC_FLAGS) $^ -o $@ $(CUDA_LIBS)
 
-# Force rebuild when definitions change
-DEFINITIONS := inc/definitions.hpp
-
 # Compile CUDA source files
-$(OBJ_DIR)/%.cu.o: $(SRC_DIR)/%.cu $(DEFINITIONS) | $(OBJ_DIR)
+$(OBJ_DIR)/%.cu.o: $(SRC_DIR)/%.cu | $(OBJ_DIR)
 	@mkdir -p $(dir $@)
 	$(NVCC) $(NVCC_FLAGS) -c $< -o $@
 
 # Compile C++ source files
-$(OBJ_DIR)/%.cpp.o: $(SRC_DIR)/%.cpp $(DEFINITIONS) | $(OBJ_DIR)
+$(OBJ_DIR)/%.cpp.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
 	$(NVCC) $(NVCC_FLAGS) -x cu -c $< -o $@
 
 # Clean build artifacts

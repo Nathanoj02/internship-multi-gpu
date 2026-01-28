@@ -21,8 +21,8 @@ void check_difference(
 
 
 int main() {
-    int rows = 2048;
-    int cols = 2048;
+    int rows = 1024;
+    int cols = 1024;
     float min_value = 0;
     float max_value = 10;
 

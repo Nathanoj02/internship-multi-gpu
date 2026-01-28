@@ -1,7 +1,40 @@
-#include "kernels/6_kernel_warp_tiling.cuh"
-#include "definitions.hpp"
 #include <cuda_runtime.h>
+#include "kernels/6_kernel_warp_tiling.cuh"
+#include "gemm.cuh"
+#include "../../utils/error.cuh"
 
+#define CEIL_DIV(x, y) (((x) + (y) - 1) / (y))
+
+template <
+    size_t BNWARP, size_t BKWARP, size_t BMWARP,
+    size_t WM, size_t WN,
+    size_t WMITER, size_t WNITER,
+    size_t TMWARPS, size_t TNWARPS,
+    size_t WSUBM, size_t WSUBN,
+    size_t WARPSIZE
+>
+/**
+ * CUDA kernel to perform matrix multiplication using warp tiling
+ * Each warp computes a WN x WM tile, with each thread computing multiple elements
+ * @tparam BNWARP Block tile size for rows of matrix A
+ * @tparam BKWARP Block tile size for columns of matrix A / rows of matrix B
+ * @tparam BMWARP Block tile size for columns of matrix B
+ * @tparam WM Warp tile size for columns (M dimension)
+ * @tparam WN Warp tile size for rows (N dimension)
+ * @tparam WMITER Number of iterations in M dimension within warp tile
+ * @tparam WNITER Number of iterations in N dimension within warp tile
+ * @tparam TMWARPS Number of elements per thread in M dimension per iteration
+ * @tparam TNWARPS Number of elements per thread in N dimension per iteration
+ * @tparam WSUBM Number of threads in M dimension within a warp
+ * @tparam WSUBN Number of threads in N dimension within a warp
+ * @tparam WARPSIZE Number of threads in a warp
+ * @param A Pointer to matrix A
+ * @param B Pointer to matrix B
+ * @param C Pointer to result matrix C
+ * @param rows_a Number of rows in matrix A (N)
+ * @param cols_a Number of columns in matrix A (K)
+ * @param cols_b Number of columns in matrix B (M)
+ */
 __global__ void gemm_warp_tiling_kernel (
     const dtype* A, const dtype* B, dtype* C,
     int rows_a, int cols_a, int cols_b
@@ -109,4 +142,41 @@ __global__ void gemm_warp_tiling_kernel (
             }
         }
     }
+}
+
+
+void gemm_warp_tiling (
+    dtype* result, const dtype* A, const dtype* B, 
+    size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
+) {
+    constexpr size_t BNWARP = 64;
+    constexpr size_t BKWARP = 8;
+    constexpr size_t BMWARP = 64;
+    constexpr size_t WM = 8;
+    constexpr size_t WN = 32;
+    constexpr size_t WMITER = 2;
+    constexpr size_t WNITER = 1;
+    constexpr size_t TMWARPS = 2;
+    constexpr size_t TNWARPS = 2;
+    constexpr size_t WSUBM = 2;
+    constexpr size_t WSUBN = 16;
+    constexpr size_t WARPSIZE = 32;
+
+    dtype* d_A;
+    dtype* d_B;
+    dtype* d_C;
+
+    init_gemm(&d_A, &d_B, &d_C, A, B, rows_a, cols_a, rows_b, cols_b);
+
+    dim3 blockSize(BNWARP * BKWARP);
+    dim3 gridSize(CEIL_DIV(cols_b, BMWARP), CEIL_DIV(rows_a, BNWARP));
+
+    gemm_warp_tiling_kernel<
+        BNWARP, BKWARP, BMWARP, WM, WN, WMITER, WNITER, TMWARPS, TNWARPS, WSUBM, WSUBN, WARPSIZE
+        ><<<gridSize, blockSize>>>(d_A, d_B, d_C, rows_a, cols_a, cols_b);
+
+    CUDA_CHECK( cudaGetLastError() );
+    CUDA_CHECK( cudaDeviceSynchronize() );
+
+    cleanup_gemm(d_A, d_B, d_C, result, rows_a, cols_b);
 }

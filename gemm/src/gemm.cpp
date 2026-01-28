@@ -2,7 +2,7 @@
 #include <random>
 #include <stdexcept>
 
-std::vector<float> generate_matrix(int rows, int cols, float min_value, float max_value) {
+std::vector<float> generate_matrix (int rows, int cols, float min_value, float max_value) {
     // Generate matrix with random float values
     std::vector<float> matrix(rows * cols);
     std::random_device dev;
@@ -18,7 +18,7 @@ std::vector<float> generate_matrix(int rows, int cols, float min_value, float ma
     return matrix;
 }
 
-void gemm_cpu(
+void gemm_cpu (
     std::vector<float>& result,
     const std::vector<float>& a, const std::vector<float>& b, 
     int rows_a, int cols_a, int rows_b, int cols_b

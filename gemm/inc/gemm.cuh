@@ -11,6 +11,7 @@
 #include "kernels/6_kernel_warp_tiling.cuh"
 #include "kernels/7_kernel_tensor_naive.cuh"
 #include "kernels/8_kernel_tensor_warp_tiling.cuh"
+#include "kernels/9_kernel_tensor_double_buffering.cuh"
 
 /**
  * Initialize device memory and copy input matrices

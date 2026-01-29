@@ -10,6 +10,7 @@
 #include "kernels/5_kernel_2D_block_tiling.cuh"
 #include "kernels/6_kernel_warp_tiling.cuh"
 #include "kernels/7_kernel_tensor_naive.cuh"
+#include "kernels/8_kernel_tensor_warp_tiling.cuh"
 
 /**
  * Initialize device memory and copy input matrices

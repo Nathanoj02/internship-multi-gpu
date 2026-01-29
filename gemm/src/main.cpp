@@ -64,6 +64,9 @@ int main() {
     std::vector<float> result_tensor_gpu(rows * cols, 0.0f);
     benchmark("GEMM CUDA Tensor Core", gemm_tensor_naive, result_tensor_gpu.data(), a_half.data(), b_half.data(), rows, cols, rows, cols);
 
+    std::vector<float> result_tensor_warp_gpu(rows * cols, 0.0f);
+    benchmark("GEMM CUDA Tensor Core Warp Tiling", gemm_tensor_warp_tiling, result_tensor_warp_gpu.data(), a_half.data(), b_half.data(), rows, cols, rows, cols);
+
     // Convert GPU results back to float for comparison
     std::vector<float> result_naive = dtype_to_float_vec(result_naive_gpu);
     std::vector<float> result_coalescing = dtype_to_float_vec(result_coalescing_gpu);
@@ -80,7 +83,7 @@ int main() {
     check_difference("GEMM CUDA 2D Block Tiling", result, result_2D_tiling);
     check_difference("GEMM CUDA Warp Tiling", result, result_warp_tiling);
     check_difference("GEMM CUDA Tensor Core", result, result_tensor_gpu);
-    
+    check_difference("GEMM CUDA Tensor Core Warp Tiling", result, result_tensor_warp_gpu);
     return 0;
 }
 

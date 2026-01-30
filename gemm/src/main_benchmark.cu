@@ -26,7 +26,7 @@ int main() {
     float min_value = 0;
     float max_value = 10;
 
-    std::vector<size_t> sizes = {64, 128, 256};// 512, 1024, 2048, 4096, 8192, 16384};
+    std::vector<size_t> sizes = {64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384};
 
     for (size_t size : sizes) {
         std::cout << "\n========== Testing size: " << size << "x" << size << " ==========\n";

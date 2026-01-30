@@ -13,8 +13,8 @@ TARGET := $(BIN_DIR)/gemm
 TARGET_WARP := $(BIN_DIR)/gemm_warp_tiling
 
 # Source files (excluding main files)
-CU_SOURCES := $(wildcard $(SRC_DIR)/*.cu) $(wildcard $(SRC_DIR)/kernels/*.cu)
-CPP_SOURCES := $(filter-out $(SRC_DIR)/main.cpp $(SRC_DIR)/main_warp_tiling.cpp, $(wildcard $(SRC_DIR)/*.cpp))
+CU_SOURCES := $(filter-out $(SRC_DIR)/main.cu $(SRC_DIR)/main_warp_tiling.cu, $(wildcard $(SRC_DIR)/*.cu) $(wildcard $(SRC_DIR)/kernels/*.cu))
+CPP_SOURCES := $(wildcard $(SRC_DIR)/*.cpp)
 
 # Object files
 CU_OBJECTS := $(patsubst $(SRC_DIR)/%.cu,$(OBJ_DIR)/%.cu.o,$(CU_SOURCES))
@@ -22,8 +22,8 @@ CPP_OBJECTS := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.cpp.o,$(CPP_SOURCES))
 COMMON_OBJECTS := $(CU_OBJECTS) $(CPP_OBJECTS)
 
 # Main object files
-MAIN_OBJ := $(OBJ_DIR)/main.cpp.o
-MAIN_WARP_OBJ := $(OBJ_DIR)/main_warp_tiling.cpp.o
+MAIN_OBJ := $(OBJ_DIR)/main.cu.o
+MAIN_WARP_OBJ := $(OBJ_DIR)/main_warp_tiling.cu.o
 
 # Compiler flags
 NVCC_FLAGS := $(addprefix -I,$(INC_DIRS)) -O3 -gencode arch=compute_75,code=sm_75 #-gencode arch=compute_89,code=sm_89

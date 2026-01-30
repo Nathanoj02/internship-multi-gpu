@@ -149,6 +149,7 @@ void gemm_warp_tiling (
     dtype* result, const dtype* A, const dtype* B, 
     size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
 ) {
+    #ifdef CC80 // A30
     constexpr size_t BNWARP = 64;
     constexpr size_t BKWARP = 8;
     constexpr size_t BMWARP = 64;
@@ -161,6 +162,21 @@ void gemm_warp_tiling (
     constexpr size_t WSUBM = 2;
     constexpr size_t WSUBN = 16;
     constexpr size_t WARPSIZE = 32;
+    #else
+    constexpr size_t BNWARP = 64;
+    constexpr size_t BKWARP = 8;
+    constexpr size_t BMWARP = 64;
+    constexpr size_t WM = 8;
+    constexpr size_t WN = 32;
+    constexpr size_t WMITER = 2;
+    constexpr size_t WNITER = 1;
+    constexpr size_t TMWARPS = 2;
+    constexpr size_t TNWARPS = 2;
+    constexpr size_t WSUBM = 2;
+    constexpr size_t WSUBN = 16;
+    constexpr size_t WARPSIZE = 32;
+    #endif
+
 
     dtype* d_A;
     dtype* d_B;

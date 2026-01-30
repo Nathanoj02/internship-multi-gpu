@@ -117,11 +117,19 @@ void gemm_2D_block_tiling (
     dtype* result, const dtype* A, const dtype* B, 
     size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
 ) {
+    #ifdef CC80
+    constexpr size_t BN2D = 128;
+    constexpr size_t BK2D = 16;
+    constexpr size_t BM2D = 128;
+    constexpr size_t TM2D = 8;
+    constexpr size_t TN2D = 8;
+    #else
     constexpr size_t BN2D = 64;
     constexpr size_t BK2D = 8;
     constexpr size_t BM2D = 64;
     constexpr size_t TM2D = 4;
     constexpr size_t TN2D = 4;
+    #endif
 
     dtype* d_A;
     dtype* d_B;

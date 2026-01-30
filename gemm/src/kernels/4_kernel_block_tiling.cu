@@ -83,10 +83,17 @@ void gemm_block_tiling (
     dtype* result, const dtype* A, const dtype* B, 
     size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
 ) {
+    #ifdef CC80 // A30
     constexpr size_t BM = 64;
     constexpr size_t BN = 64;
     constexpr size_t BK = 8;
     constexpr size_t TM = 8;
+    #else
+    constexpr size_t BM = 64;
+    constexpr size_t BN = 64;
+    constexpr size_t BK = 8;
+    constexpr size_t TM = 8;
+    #endif
 
     dtype* d_A;
     dtype* d_B;

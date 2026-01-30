@@ -30,6 +30,8 @@ int main() {
     // CPU computation
     std::vector<float> result(rows * cols, 0.0f);
 
+    gemm_cpu(result, a, b, rows, cols, rows, cols);
+
     // Convert to dtype for GPU (no-op if dtype=float)
     std::vector<dtype> a_gpu = float_to_dtype_vec(a);
     std::vector<dtype> b_gpu = float_to_dtype_vec(b);

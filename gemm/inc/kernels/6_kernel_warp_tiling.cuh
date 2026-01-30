@@ -1,7 +1,7 @@
 #ifndef KERNEL_WARP_TILING_CUH
 #define KERNEL_WARP_TILING_CUH
 
-#include "../dtype.hpp"
+#include "../dtype.cuh"
 
 /**
  * Multiplies two matrices using GPU with warp tiling optimization

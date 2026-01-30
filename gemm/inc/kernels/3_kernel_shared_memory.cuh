@@ -1,7 +1,7 @@
 #ifndef KERNEL_SHARED_MEMORY_CUH
 #define KERNEL_SHARED_MEMORY_CUH
 
-#include "../dtype.hpp"
+#include "../dtype.cuh"
 
 /**
  * Multiplies two matrices using GPU with shared memory optimization

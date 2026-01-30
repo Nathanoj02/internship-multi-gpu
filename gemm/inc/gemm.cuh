@@ -1,7 +1,7 @@
 #ifndef GEMM_CUDA_CUH
 #define GEMM_CUDA_CUH
 
-#include "dtype.hpp"
+#include "dtype.cuh"
 
 #include "kernels/1_kernel_naive.cuh"
 #include "kernels/2_kernel_memory_coalescing.cuh"

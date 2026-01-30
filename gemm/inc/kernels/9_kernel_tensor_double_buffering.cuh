@@ -1,7 +1,7 @@
 #ifndef KERNEL_TENSOR_DOUBLE_BUFFERING_CUH
 #define KERNEL_TENSOR_DOUBLE_BUFFERING_CUH
 
-#include "../dtype.hpp"
+#include "../dtype.cuh"
 
 /**
  * Multiplies two matrices using GPU with tensor core double buffering optimization

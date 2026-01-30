@@ -1,7 +1,7 @@
 #ifndef KERNEL_2D_BLOCK_TILING_CUH
 #define KERNEL_2D_BLOCK_TILING_CUH
 
-#include "../dtype.hpp"
+#include "../dtype.cuh"
 
 /**
  * Multiplies two matrices using GPU with 2D block tiling optimization

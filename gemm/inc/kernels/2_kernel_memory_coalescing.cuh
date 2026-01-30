@@ -1,7 +1,7 @@
 #ifndef KERNEL_MEMORY_COALESCING_CUH
 #define KERNEL_MEMORY_COALESCING_CUH
 
-#include "../dtype.hpp"
+#include "../dtype.cuh"
 
 /**
  * Multiplies two matrices using GPU with memory coalescing optimization

@@ -1,6 +1,6 @@
 #include "gemm.hpp"
 #include "gemm.cuh"
-#include "dtype.hpp"
+#include "dtype.cuh"
 #include <iostream>
 #include <vector>
 #include <chrono>

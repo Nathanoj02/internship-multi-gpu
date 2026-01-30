@@ -9,11 +9,12 @@ OBJ_DIR := obj
 BIN_DIR := bin
 
 # Target executables
-TARGET := $(BIN_DIR)/gemm
+TARGET := $(BIN_DIR)/gemm_correctness
+TARGET_BENCHMARK := $(BIN_DIR)/gemm_benchmark
 TARGET_WARP := $(BIN_DIR)/gemm_warp_tiling
 
 # Source files (excluding main files)
-CU_SOURCES := $(filter-out $(SRC_DIR)/main.cu $(SRC_DIR)/main_warp_tiling.cu, $(wildcard $(SRC_DIR)/*.cu) $(wildcard $(SRC_DIR)/kernels/*.cu))
+CU_SOURCES := $(filter-out $(SRC_DIR)/main_correctness.cu $(SRC_DIR)/main_benchmark.cu $(SRC_DIR)/main_warp_tiling.cu, $(wildcard $(SRC_DIR)/*.cu) $(wildcard $(SRC_DIR)/kernels/*.cu))
 CPP_SOURCES := $(wildcard $(SRC_DIR)/*.cpp)
 
 # Object files
@@ -22,7 +23,8 @@ CPP_OBJECTS := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.cpp.o,$(CPP_SOURCES))
 COMMON_OBJECTS := $(CU_OBJECTS) $(CPP_OBJECTS)
 
 # Main object files
-MAIN_OBJ := $(OBJ_DIR)/main.cu.o
+MAIN_CORRECTNESS_OBJ := $(OBJ_DIR)/main_correctness.cu.o
+MAIN_BENCHMARK_OBJ := $(OBJ_DIR)/main_benchmark.cu.o
 MAIN_WARP_OBJ := $(OBJ_DIR)/main_warp_tiling.cu.o
 
 # Compiler flags
@@ -34,20 +36,19 @@ CUDA_LIBS := -lcudart
 
 # Default target
 .PHONY: all
-all: $(TARGET)
-
-# Build both executables
-.PHONY: both
-both: $(TARGET) $(TARGET_WARP)
+all: $(TARGET) $(TARGET_BENCHMARK) $(TARGET_WARP)
 
 # Create directories if they don't exist
 $(OBJ_DIR) $(BIN_DIR):
 	mkdir -p $@
 
-# Link the main executable
-$(TARGET): $(COMMON_OBJECTS) $(MAIN_OBJ) | $(BIN_DIR)
+# Link the correctness executable
+$(TARGET): $(COMMON_OBJECTS) $(MAIN_CORRECTNESS_OBJ) | $(BIN_DIR)
 	$(NVCC) $(NVCC_FLAGS) $^ -o $@ $(CUDA_LIBS)
 
+# Link the benchmark executable
+$(TARGET_BENCHMARK): $(COMMON_OBJECTS) $(MAIN_BENCHMARK_OBJ) | $(BIN_DIR)
+	$(NVCC) $(NVCC_FLAGS) $^ -o $@ $(CUDA_LIBS)
 # Link the warp tiling executable
 $(TARGET_WARP): $(COMMON_OBJECTS) $(MAIN_WARP_OBJ) | $(BIN_DIR)
 	$(NVCC) $(NVCC_FLAGS) $^ -o $@ $(CUDA_LIBS)
@@ -66,10 +67,15 @@ $(OBJ_DIR)/%.cpp.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
 clean:
 	rm -rf $(OBJ_DIR) $(BIN_DIR)
 
-# Run the main program
+# Run the correctness test
 .PHONY: run
 run: $(TARGET)
 	./$(TARGET)
+
+# Run the benchmark
+.PHONY: bench
+bench: $(TARGET_BENCHMARK)
+	./$(TARGET_BENCHMARK)
 
 # Run the warp tiling benchmark
 .PHONY: run-warp

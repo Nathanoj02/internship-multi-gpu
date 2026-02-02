@@ -15,14 +15,22 @@ template <
  * @tparam BN2D The threadblock size for rows of matrix A
  * @tparam BK2D The threadblock size for columns of matrix A / rows of matrix B
  * @tparam BM2D The threadblock size for columns of matrix B
- * @tparam TM2D Number of rows computed by each thread
- * @tparam TN2D Number of columns computed by each thread
+ * @tparam TM2D Number of columns computed by each thread
+ * @tparam TN2D Number of rows computed by each thread
  * @param A Pointer to matrix A
  * @param B Pointer to matrix B
  * @param C Pointer to result matrix C
  * @param rows_a Number of rows in matrix A (N)
  * @param cols_a Number of columns in matrix A (K)
  * @param cols_b Number of columns in matrix B (M)
+ *
+ * Template parameter constraints:
+ *   - BM2D % TM2D = 0                    (thread column indexing)
+ *   - BN2D % (TM2D * TN2D) = 0           (thread row indexing and strideB)
+ *   - BM2D % BK2D = 0                    (strideA is integer)
+ *   - (TM2D * TN2D * BK2D) % BM2D = 0    (A tile strided load coverage)
+ *   - (BK2D * TM2D * TN2D) % BN2D = 0    (B tile strided load coverage)
+ *   - (BN2D * BM2D) / (TM2D * TN2D) <= 1024  (CUDA max threads per block)
  */
 __global__ void gemm_2D_block_tiling_kernel (
     const dtype* A, const dtype* B, dtype* C,

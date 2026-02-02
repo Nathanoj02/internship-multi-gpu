@@ -30,7 +30,8 @@ int main() {
 
     for (size_t size : sizes) {
         std::cout << "\n========== Testing size: " << size << "x" << size << " ==========\n";
-        
+        std::flush(std::cout);
+
         // Open CSV file for this size
         std::string filename = "results/benchmark_results_" + std::to_string(size) + ".csv";
         std::ofstream csv_file(filename);

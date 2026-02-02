@@ -8,9 +8,9 @@
 template <size_t BN, size_t BK, size_t BM, size_t TM>
 /**
  * CUDA kernel to perform matrix multiplication using block tiling
- * @tparam BN The threadblock size for N dimension SMEM chaching
- * @tparam BK The threadblock size for K dimension SMEM chacing
- * @tparam BM The threadblock size for M dimension SMEM chacing
+ * @tparam BN The threadblock size for N dimension SMEM caching
+ * @tparam BK The threadblock size for K dimension SMEM caching
+ * @tparam BM The threadblock size for M dimension SMEM caching
  * @tparam TM Number of M results computed per thread
  * @param A Pointer to matrix A
  * @param B Pointer to matrix B
@@ -18,6 +18,12 @@ template <size_t BN, size_t BK, size_t BM, size_t TM>
  * @param rows_a Number of rows in matrix A
  * @param cols_a Number of columns in matrix A (and rows in matrix B)
  * @param cols_b Number of columns in matrix B
+ *
+ * Template parameter constraints:
+ *   - BM = BK * TM        (required for correct thread row indexing)
+ *   - BN >= BM            (required for B tile shared memory loading)
+ *   - BN % TM = 0         (each thread computes TM consecutive rows)
+ *   - (BN * BM) / TM <= 1024  (CUDA max threads per block)
  */
 __global__ void gemm_block_tiling_kernel (
     const dtype* A, const dtype* B, dtype* C,

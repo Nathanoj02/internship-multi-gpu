@@ -141,10 +141,10 @@ void gemm_tensor_warp_tiling (
     constexpr size_t WMMA_M = 16;
     constexpr size_t WMMA_N = 16;
     constexpr size_t WMMA_K = 16;
-    constexpr size_t BLOCK_ROW_WARPS = 2;
+    constexpr size_t BLOCK_ROW_WARPS = 4;
     constexpr size_t BLOCK_COL_WARPS = 2;
-    constexpr size_t WARP_ROW_TILES = 2;
-    constexpr size_t WARP_COL_TILES = 2;
+    constexpr size_t WARP_ROW_TILES = 4;
+    constexpr size_t WARP_COL_TILES = 4;
 
     constexpr size_t BLOCK_ROW_TILES = WARP_ROW_TILES * BLOCK_ROW_WARPS;
     constexpr size_t BLOCK_COL_TILES = WARP_COL_TILES * BLOCK_COL_WARPS;

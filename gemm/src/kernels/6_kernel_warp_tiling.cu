@@ -27,13 +27,31 @@ template <
  * @tparam TNWARPS Number of elements per thread in N dimension per iteration
  * @tparam WSUBM Number of threads in M dimension within a warp
  * @tparam WSUBN Number of threads in N dimension within a warp
- * @tparam WARPSIZE Number of threads in a warp
+ * @tparam WARPSIZE Number of threads in a warp (32)
  * @param A Pointer to matrix A
  * @param B Pointer to matrix B
  * @param C Pointer to result matrix C
  * @param rows_a Number of rows in matrix A (N)
  * @param cols_a Number of columns in matrix A (K)
  * @param cols_b Number of columns in matrix B (M)
+ *
+ * Template parameter constraints:
+ *   Block/Warp tile relationships:
+ *   - BMWARP % WM = 0                  (warps evenly tile block M dimension)
+ *   - BNWARP % WN = 0                  (warps evenly tile block N dimension)
+ *   - (BNWARP/WN) * (BMWARP/WM) * WARPSIZE = BNWARP * BKWARP  (thread count consistency)
+ *
+ *   Warp internal tiling:
+ *   - WSUBM * WSUBN = WARPSIZE         (thread arrangement fills warp)
+ *   - WSUBN * TNWARPS * WNITER = WN    (threads cover warp N dimension)
+ *   - WSUBM * TMWARPS * WMITER = WM    (threads cover warp M dimension)
+ *
+ *   Shared memory loading:
+ *   - BNWARP >= BMWARP                 (enough threads for B tile loading)
+ *   - (BNWARP * BKWARP) % BMWARP = 0   (clean B tile row coverage)
+ *
+ *   CUDA limits:
+ *   - BNWARP * BKWARP <= 1024          (max threads per block)
  */
 __global__ void gemm_warp_tiling_kernel (
     const dtype* A, const dtype* B, dtype* C,

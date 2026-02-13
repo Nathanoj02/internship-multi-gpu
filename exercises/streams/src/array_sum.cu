@@ -1,5 +1,5 @@
 #include "array_sum.cuh"
-#include "error.cuh"
+#include "../../../utils/error.cuh"
 #include <cuda_runtime.h>
 #include <stdio.h>
 

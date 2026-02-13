@@ -1,5 +1,5 @@
 #include "reduction.cuh"
-#include "error.cuh"
+#include "../../../utils/error.cuh"
 #include <cuda_runtime.h>
 #include <stdio.h>
 #include <mpi.h>

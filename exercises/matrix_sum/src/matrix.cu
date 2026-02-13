@@ -1,5 +1,5 @@
 #include "matrix.cuh"
-#include "../utils/error.cuh"
+#include "../../../utils/error.cuh"
 #include <cuda_runtime.h>
 #include <stdio.h>
 

@@ -1,5 +1,5 @@
 #include "spmv.cuh"
-#include "error.cuh"
+#include "../../../utils/error.cuh"
 #include "load_balancing.hpp"
 
 #include <cuda_runtime.h>

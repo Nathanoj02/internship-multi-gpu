@@ -3,9 +3,9 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define M 16
-#define K 16
-#define N 16
+#define M 64
+#define K 64
+#define N 64
 #define MIN_VALUE 0
 #define MAX_VALUE 10
 
@@ -64,6 +64,7 @@ int main(int argc, char** argv) {
     int* A = NULL;
     int* C = NULL;
     int* ground_truth = NULL;
+    double ground_truth_time = 0;
     
     if (world_rank == 0) {
         srand((unsigned) time(NULL));
@@ -74,27 +75,42 @@ int main(int argc, char** argv) {
         
         // Compute ground truth
         ground_truth = (int*) malloc(M * N * sizeof(int));
+
+        double start_time = MPI_Wtime();
         gemm(A, B, ground_truth, M, N, K);
+        double end_time = MPI_Wtime();
+        ground_truth_time = end_time - start_time;
     }
     
     // Broadcast entire B matrix to all processes
     MPI_Bcast(B, K * N, MPI_INT, 0, MPI_COMM_WORLD);
     
     // Scatter rows of A to all processes
-    MPI_Scatter(A, chunk_m * K, MPI_INT, 
-                local_A, chunk_m * K, MPI_INT, 
-                0, MPI_COMM_WORLD);
+    MPI_Scatter(A, chunk_m * K, MPI_INT, local_A, chunk_m * K, 
+        MPI_INT, 0, MPI_COMM_WORLD);
+
+    double start_time = MPI_Wtime();
     
     // Each process computes its chunk of C
     gemm(local_A, B, local_C, chunk_m, N, K);
     
     // Gather all chunks of C back to rank 0
-    MPI_Gather(local_C, chunk_m * N, MPI_INT,
-               C, chunk_m * N, MPI_INT,
-               0, MPI_COMM_WORLD);
+    MPI_Gather(local_C, chunk_m * N, MPI_INT, C,
+        chunk_m * N, MPI_INT, 0, MPI_COMM_WORLD);
+
+    double end_time = MPI_Wtime();
+    double local_elapsed = end_time - start_time;
+
+    // Get max time across all processes
+    double max_time;
+    MPI_Reduce(&local_elapsed, &max_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
     
     // Validate on rank 0
     if (world_rank == 0) {
+        printf("\nGround truth computation time: %f seconds\n", ground_truth_time);
+        printf("Elapsed time: %f seconds\n", max_time);
+        printf("Speedup: %.3fx\n", ground_truth_time / max_time);
+        
         matrix_equals(C, ground_truth, M, N);
         free(A);
         free(C);

@@ -29,6 +29,7 @@ int main(int argc, char** argv) {
     int* local_array = (int *) malloc(chunk_size * sizeof(int));
 
     int ground_truth_sum = 0;
+    double ground_truth_time = 0;
     
     // Host 0 generates array and communicates to everyone else
     if (world_rank == 0) {
@@ -37,9 +38,13 @@ int main(int argc, char** argv) {
         generate_array(array, ARRAY_SIZE);
 
         // Perform ground truth sum for validation
+        double start_time = MPI_Wtime();
         for (int i = 0; i < ARRAY_SIZE; i++) {
             ground_truth_sum += array[i];
         }
+        double end_time = MPI_Wtime();
+        ground_truth_time = end_time - start_time;
+        printf("\nGround truth computation time: %f seconds\n", ground_truth_time);
 
         // Copy rank 0's chunk
         for (int i = 0; i < chunk_size; i++) {
@@ -56,6 +61,8 @@ int main(int argc, char** argv) {
         MPI_Recv(local_array, chunk_size, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     }
 
+    double start_time = MPI_Wtime();
+
     // All processes compute local sum
     int local_sum = 0;
     for (int i = 0; i < chunk_size; i++) {
@@ -66,8 +73,17 @@ int main(int argc, char** argv) {
     int global_sum = 0;
     MPI_Reduce(&local_sum, &global_sum, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
 
+    double end_time = MPI_Wtime();
+    double local_elapsed = end_time - start_time;
+
+    // Get maximum time across all processes
+    double max_time = 0;
+    MPI_Reduce(&local_elapsed, &max_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
     if (world_rank == 0) {
-        printf("Total sum: %d\n", global_sum);
+        // printf("Total sum: %d\n", global_sum);
+        printf("Elapsed time: %f seconds\n", max_time);
+        printf("Speedup: %.3fx\n", ground_truth_time / max_time);
         
         if (global_sum == ground_truth_sum) {
             printf("Validation successful\n");

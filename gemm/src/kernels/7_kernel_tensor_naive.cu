@@ -74,9 +74,24 @@ void gemm_tensor_naive (
     dim3 dim_block(BLOCK_SIZE, 1);
     dim3 dim_grid(rows_a / WMMA_M, cols_b / WMMA_N);
 
+    cudaEvent_t start, stop;
+    CUDA_CHECK( cudaEventCreate(&start) );
+    CUDA_CHECK( cudaEventCreate(&stop) );
+
+    CUDA_CHECK( cudaEventRecord(start) );
     gemm_tensor_naive_kernel<WMMA_M, WMMA_N, WMMA_K><<<dim_grid, dim_block>>>(d_A, d_B, d_C, rows_a, cols_a, cols_b);
     CUDA_CHECK( cudaGetLastError() );
-    CUDA_CHECK( cudaDeviceSynchronize() );
+    CUDA_CHECK( cudaEventRecord(stop) );
+    CUDA_CHECK( cudaEventSynchronize(stop) );
+
+    float ms = 0.0f;
+    CUDA_CHECK( cudaEventElapsedTime(&ms, start, stop) );
+    double flops = 2.0 * rows_a * cols_a * cols_b;
+    double gflops = flops / (ms / 1000.0) / 1e9;
+    printf("[Tensor Naive] Kernel time: %.3f ms | %.1f GFLOPS\n", ms, gflops);
+
+    CUDA_CHECK( cudaEventDestroy(start) );
+    CUDA_CHECK( cudaEventDestroy(stop) );
 
     cleanup_gemm_tensor(d_A, d_B, d_C, result, rows_a, cols_b);
 }

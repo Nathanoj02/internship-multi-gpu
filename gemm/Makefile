@@ -12,9 +12,10 @@ BIN_DIR := bin
 TARGET := $(BIN_DIR)/gemm_correctness
 TARGET_BENCHMARK := $(BIN_DIR)/gemm_benchmark
 TARGET_WARP := $(BIN_DIR)/gemm_warp_tiling
+TARGET_TENSOR_PROFILE := $(BIN_DIR)/profile_tensor
 
 # Source files (excluding main files)
-CU_SOURCES := $(filter-out $(SRC_DIR)/main_correctness.cu $(SRC_DIR)/main_benchmark.cu $(SRC_DIR)/main_warp_tiling.cu, $(wildcard $(SRC_DIR)/*.cu) $(wildcard $(SRC_DIR)/kernels/*.cu))
+CU_SOURCES := $(filter-out $(SRC_DIR)/main_correctness.cu $(SRC_DIR)/main_benchmark.cu $(SRC_DIR)/main_warp_tiling.cu $(SRC_DIR)/main_profile_tensor.cu, $(wildcard $(SRC_DIR)/*.cu) $(wildcard $(SRC_DIR)/kernels/*.cu))
 CPP_SOURCES := $(wildcard $(SRC_DIR)/*.cpp)
 
 # Object files
@@ -26,6 +27,7 @@ COMMON_OBJECTS := $(CU_OBJECTS) $(CPP_OBJECTS)
 MAIN_CORRECTNESS_OBJ := $(OBJ_DIR)/main_correctness.cu.o
 MAIN_BENCHMARK_OBJ := $(OBJ_DIR)/main_benchmark.cu.o
 MAIN_WARP_OBJ := $(OBJ_DIR)/main_warp_tiling.cu.o
+MAIN_TENSOR_PROFILE_OBJ := $(OBJ_DIR)/main_profile_tensor.cu.o
 
 # Compiler flags
 # For GTX 1650 Ti
@@ -40,7 +42,7 @@ CUDA_LIBS := -lcudart
 
 # Default target
 .PHONY: all
-all: $(TARGET) $(TARGET_BENCHMARK) $(TARGET_WARP)
+all: $(TARGET) $(TARGET_BENCHMARK) $(TARGET_WARP) $(TARGET_TENSOR_PROFILE)
 
 # Create directories if they don't exist
 $(OBJ_DIR) $(BIN_DIR):
@@ -55,6 +57,10 @@ $(TARGET_BENCHMARK): $(COMMON_OBJECTS) $(MAIN_BENCHMARK_OBJ) | $(BIN_DIR)
 	$(NVCC) $(NVCC_FLAGS) $^ -o $@ $(CUDA_LIBS)
 # Link the warp tiling executable
 $(TARGET_WARP): $(COMMON_OBJECTS) $(MAIN_WARP_OBJ) | $(BIN_DIR)
+	$(NVCC) $(NVCC_FLAGS) $^ -o $@ $(CUDA_LIBS)
+
+# Link the tensor core profile executable
+$(TARGET_TENSOR_PROFILE): $(COMMON_OBJECTS) $(MAIN_TENSOR_PROFILE_OBJ) | $(BIN_DIR)
 	$(NVCC) $(NVCC_FLAGS) $^ -o $@ $(CUDA_LIBS)
 
 # Compile CUDA source files

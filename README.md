@@ -24,6 +24,11 @@ Run on cluster:
 sbatch run_cluster.sh
 ```
 
+Use NCU:
+```sh
+ncu --set full --target-processes all -f -o gemm_profile ./bin/profile_tensor
+```
+
 ## Second part - MPI
 In folder [`mpi/`](./mpi/)
 

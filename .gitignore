@@ -14,3 +14,7 @@ data/
 # Benchmarks
 benchmark_results/
 results/
+
+# Nsys / NCU
+*.nsys-rep
+*.ncu-rep

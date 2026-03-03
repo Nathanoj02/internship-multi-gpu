@@ -13,9 +13,10 @@ TARGET := $(BIN_DIR)/gemm_correctness
 TARGET_BENCHMARK := $(BIN_DIR)/gemm_benchmark
 TARGET_WARP := $(BIN_DIR)/gemm_warp_tiling
 TARGET_TENSOR_PROFILE := $(BIN_DIR)/profile_tensor
+TARGET_TENSOR_MRE := $(BIN_DIR)/gemm_tensor_mre
 
 # Source files (excluding main files)
-CU_SOURCES := $(filter-out $(SRC_DIR)/main_correctness.cu $(SRC_DIR)/main_benchmark.cu $(SRC_DIR)/main_warp_tiling.cu $(SRC_DIR)/main_profile_tensor.cu, $(wildcard $(SRC_DIR)/*.cu) $(wildcard $(SRC_DIR)/kernels/*.cu))
+CU_SOURCES := $(filter-out $(SRC_DIR)/main_correctness.cu $(SRC_DIR)/main_benchmark.cu $(SRC_DIR)/main_warp_tiling.cu $(SRC_DIR)/main_profile_tensor.cu $(SRC_DIR)/main_tensor_mre.cu, $(wildcard $(SRC_DIR)/*.cu) $(wildcard $(SRC_DIR)/kernels/*.cu))
 CPP_SOURCES := $(wildcard $(SRC_DIR)/*.cpp)
 
 # Object files
@@ -28,6 +29,7 @@ MAIN_CORRECTNESS_OBJ := $(OBJ_DIR)/main_correctness.cu.o
 MAIN_BENCHMARK_OBJ := $(OBJ_DIR)/main_benchmark.cu.o
 MAIN_WARP_OBJ := $(OBJ_DIR)/main_warp_tiling.cu.o
 MAIN_TENSOR_PROFILE_OBJ := $(OBJ_DIR)/main_profile_tensor.cu.o
+MAIN_TENSOR_MRE_OBJ := $(OBJ_DIR)/main_tensor_mre.cu.o
 
 # Compiler flags
 # For GTX 1650 Ti
@@ -42,7 +44,7 @@ CUDA_LIBS := -lcudart
 
 # Default target
 .PHONY: all
-all: $(TARGET) $(TARGET_BENCHMARK) $(TARGET_WARP) $(TARGET_TENSOR_PROFILE)
+all: $(TARGET) $(TARGET_BENCHMARK) $(TARGET_WARP) $(TARGET_TENSOR_PROFILE) $(TARGET_TENSOR_MRE)
 
 # Create directories if they don't exist
 $(OBJ_DIR) $(BIN_DIR):
@@ -61,6 +63,9 @@ $(TARGET_WARP): $(COMMON_OBJECTS) $(MAIN_WARP_OBJ) | $(BIN_DIR)
 
 # Link the tensor core profile executable
 $(TARGET_TENSOR_PROFILE): $(COMMON_OBJECTS) $(MAIN_TENSOR_PROFILE_OBJ) | $(BIN_DIR)
+	$(NVCC) $(NVCC_FLAGS) $^ -o $@ $(CUDA_LIBS)
+
+$(TARGET_TENSOR_MRE): $(COMMON_OBJECTS) $(MAIN_TENSOR_MRE_OBJ) | $(BIN_DIR)
 	$(NVCC) $(NVCC_FLAGS) $^ -o $@ $(CUDA_LIBS)
 
 # Compile CUDA source files
@@ -96,6 +101,10 @@ run-warp: $(TARGET_WARP)
 .PHONY: warp
 warp: $(TARGET_WARP)
 
+.PHONY: run-tensor-mre
+run-tensor-mre: $(TARGET_TENSOR_MRE)
+	./$(TARGET_TENSOR_MRE)
+
 # Print variables for debugging
 .PHONY: info
 info:
@@ -104,3 +113,4 @@ info:
 	@echo "Common Objects: $(COMMON_OBJECTS)"
 	@echo "Main Target: $(TARGET)"
 	@echo "Warp Target: $(TARGET_WARP)"
+	@echo "Tensor MRE Target: $(TARGET_TENSOR_MRE)"

@@ -19,6 +19,11 @@ Benchmark:
 make bench
 ```
 
+Test tensor core FLOPS:
+```sh
+make run-tensor-mre
+```
+
 Run on cluster:
 ```sh
 sbatch run_cluster.sh

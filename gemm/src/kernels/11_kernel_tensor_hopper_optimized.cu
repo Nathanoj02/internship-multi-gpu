@@ -627,7 +627,7 @@ void createHilbert(int M, int N, int CORES, int* space) {
         int x, y;
         d2xy(dim, i, x, y);
         if (x < M && y < N) {
-            assert((int)pos[core].size() < SPACE_LEN); // fixed: was undefined 'loc'
+            assert((int)pos[core].size() < SPACE_LEN);
             assert(v[x][y] == '.');
             v[x][y] = '*';
             ++total;
@@ -677,6 +677,7 @@ void runKernel12(int M, int N, int K, half* A, half* B, half* C) {
 
         int* space = (int*)malloc(sizeof(int) * NUM_SM * SPACE_LEN);
         createHilbert(CEIL_DIV(M, BM * CLUSTER_M), CEIL_DIV(N, BN * CLUSTER_N), NUM_SM / CLUSTER_M / CLUSTER_N, space);
+        cudaFree(_dspace);
         CUDA_CHECK( cudaMalloc((void**)&_dspace, sizeof(int) * NUM_SM * SPACE_LEN) );
         CUDA_CHECK( cudaMemcpy(_dspace, space, sizeof(int) * NUM_SM * SPACE_LEN, cudaMemcpyHostToDevice) );
         free(space);
@@ -688,7 +689,24 @@ void runKernel12(int M, int N, int K, half* A, half* B, half* C) {
     static_assert(sMemSize < 256 * 1024, "Shared memory exceeds 256KB limit");
     CUDA_CHECK( cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, sMemSize) );
 
+
+    cudaEvent_t start, stop;
+    CUDA_CHECK( cudaEventCreate(&start) );
+    CUDA_CHECK( cudaEventCreate(&stop) );
+
+    CUDA_CHECK( cudaEventRecord(start) );
+
     kernel<<<NUM_SM, NUM_THREADS, sMemSize>>>(M, N, K, d_tma_map_C, d_tma_map_A, d_tma_map_B, _dspace);
+
+    CUDA_CHECK( cudaEventRecord(stop) );
+    CUDA_CHECK( cudaEventSynchronize(stop) );
+    float milliseconds = 0;
+    CUDA_CHECK( cudaEventElapsedTime(&milliseconds, start, stop) );
+    double tflops = 2.0 * M * N * K / (milliseconds * 1e9);
+    printf("GEMM CUDA Tensor Hopper: %.2f ms, %.2f TFLOPS\n", milliseconds, tflops);
+
+    CUDA_CHECK( cudaEventDestroy(start) );
+    CUDA_CHECK( cudaEventDestroy(stop) );
 }
 
 // =====================================================================

@@ -34,6 +34,11 @@ Use NCU:
 ncu --set full --target-processes all -f -o gemm_profile ./bin/profile_tensor
 ```
 
+Test tensor core algorithms for Hopper architecture:
+```sh
+make run-hopper
+```
+
 ## Second part - MPI
 In folder [`mpi/`](./mpi/)
 

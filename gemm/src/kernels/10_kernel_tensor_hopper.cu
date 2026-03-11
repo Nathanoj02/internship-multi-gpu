@@ -274,11 +274,24 @@ void gemm_tensor_hopper (
     dim3 gridSize((rows_a / BM) * (cols_b / BN));
     dim3 blockSize(NUM_THREADS);
 
+    cudaEvent_t start, stop;
+    CUDA_CHECK( cudaEventCreate(&start) );
+    CUDA_CHECK( cudaEventCreate(&stop) );
+
+    CUDA_CHECK( cudaEventRecord(start) );
+
     gemm_tensor_hopper_kernel<BM, BN, BK, /*WGMMA_M*/ 64, /*WGMMA_N*/ 64, /*WGMMA_K*/ 16, NUM_THREADS>
         <<<gridSize, blockSize>>>(rows_a, cols_a, cols_b, d_C, d_tma_map_A, d_tma_map_B);
 
-    CUDA_CHECK( cudaGetLastError() );
-    CUDA_CHECK( cudaDeviceSynchronize() );
+    CUDA_CHECK( cudaEventRecord(stop) );
+    CUDA_CHECK( cudaEventSynchronize(stop) );
+    float milliseconds = 0;
+    CUDA_CHECK( cudaEventElapsedTime(&milliseconds, start, stop) );
+    double tflops = 2.0 * rows_a * cols_a * cols_b / (milliseconds * 1e9);
+    printf("GEMM CUDA Tensor Hopper: %.2f ms, %.2f TFLOPS\n", milliseconds, tflops);
+
+    CUDA_CHECK( cudaEventDestroy(start) );
+    CUDA_CHECK( cudaEventDestroy(stop) );
 
     CUDA_CHECK( cudaFree(d_B_T) );
     CUDA_CHECK( cudaFree(d_tma_map_A) );

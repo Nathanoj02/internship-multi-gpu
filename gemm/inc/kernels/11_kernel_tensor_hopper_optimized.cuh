@@ -1,10 +1,10 @@
-#ifndef KERNEL_TENSOR_HOPPER_CUH
-#define KERNEL_TENSOR_HOPPER_CUH
+#ifndef KERNEL_TENSOR_HOPPER_OPTIMIZED_CUH
+#define KERNEL_TENSOR_HOPPER_OPTIMIZED_CUH
 
 #include "../dtype.cuh"
 
 /**
- * Multiplies two matrices using GPU with tensor core, for Hopper architecture.
+ * Multiplies two matrices using GPU with tensor core, SOTA for Hopper architecture.
  * @param result Resultant matrix to store the multiplication result
  * @param A First matrix
  * @param B Second matrix
@@ -13,9 +13,9 @@
  * @param rows_b Number of rows in the second matrix
  * @param cols_b Number of columns in the second matrix
  */
-void gemm_tensor_hopper (
+void gemm_tensor_hopper_optimized (
     float* result, const half* A, const half* B, 
     size_t rows_a, size_t cols_a, size_t rows_b, size_t cols_b
 );
 
-#endif // KERNEL_TENSOR_HOPPER_CUH
+#endif // KERNEL_TENSOR_HOPPER_OPTIMIZED_CUH

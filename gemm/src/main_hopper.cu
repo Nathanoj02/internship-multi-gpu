@@ -54,6 +54,10 @@ int main() {
         std::vector<float> result_tensor(size * size, 0.0f);
         std::tie(bench_avg, bench_std, bench_gflops) = benchmark("GEMM CUDA Tensor Core", gemm_tensor_hopper, size, result_tensor.data(), a_half.data(), b_half.data(), size, size, size, size);
         check_difference("GEMM CUDA Tensor Core", result_warp_tiling, result_tensor);
+    
+        std::vector<float> result_tensor_optimized(size * size, 0.0f);
+        std::tie(bench_avg, bench_std, bench_gflops) = benchmark("GEMM CUDA Tensor Core Optimized", gemm_tensor_hopper_optimized, size, result_tensor_optimized.data(), a_half.data(), b_half.data(), size, size, size, size);
+        check_difference("GEMM CUDA Tensor Core Optimized", result_warp_tiling, result_tensor_optimized);
     }
 
     return 0;

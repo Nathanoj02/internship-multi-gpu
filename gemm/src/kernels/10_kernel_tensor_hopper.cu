@@ -58,22 +58,24 @@ __device__ void warpgroup_wait() {
 template <int BlockMajorSize, int BlockMinorSize>
 void create_tensor_map(CUtensorMap *tma_map, half* gmem_ptr, int blocks_height, int blocks_width) {
     void* gmem_address = (void*)gmem_ptr;
-    uint64_t gmem_prob_shape[5] = {
+    // Specifying dimensions from fastest (contiguous) to slowest; in our case: K and then M/N (for A/B)
+    uint64_t gmem_shape[2] = {
         (uint64_t)BlockMinorSize * blocks_width,
-        (uint64_t)BlockMajorSize * blocks_height,
-        1, 1, 1
+        (uint64_t)BlockMajorSize * blocks_height
     };
-    uint64_t gmem_prob_stride[5] = {
+    uint64_t gmem_stride[2] = {
         sizeof(half),
-        sizeof(half) * BlockMinorSize * blocks_width,
-        0, 0, 0
+        sizeof(half) * BlockMinorSize * blocks_width
     };
-    uint32_t smem_box_shape[5] = {uint32_t(BlockMinorSize), uint32_t(BlockMajorSize), 1, 1, 1};
-    uint32_t smem_box_stride[5] = {1, 1, 1, 1, 1};
+
+    // Similarly here: BK and then BM/BN (for A/B)
+    uint32_t smem_box_shape[2] = {uint32_t(BlockMinorSize), uint32_t(BlockMajorSize)};
+    uint32_t smem_box_stride[2] = {1, 1};   // When all elements of smem_box_stride are one, smem_box_shape specifies the number of elements to load
+    uint32_t tensor_rank = 2;  // Our input matrices A,B are 2D tensors (matrices)
 
     CUresult result = cuTensorMapEncodeTiled(
-        tma_map, CU_TENSOR_MAP_DATA_TYPE_FLOAT16, 2, gmem_address, gmem_prob_shape,
-        gmem_prob_stride + 1, smem_box_shape, smem_box_stride, CU_TENSOR_MAP_INTERLEAVE_NONE,
+        tma_map, CU_TENSOR_MAP_DATA_TYPE_FLOAT16, tensor_rank, gmem_address, gmem_shape,
+        gmem_stride + 1, smem_box_shape, smem_box_stride, CU_TENSOR_MAP_INTERLEAVE_NONE,
         CU_TENSOR_MAP_SWIZZLE_128B, CU_TENSOR_MAP_L2_PROMOTION_NONE, CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
 
     assert(result == CUDA_SUCCESS);
@@ -157,8 +159,8 @@ __global__ void __launch_bounds__(NUM_THREADS) gemm_tensor_hopper_kernel(
     int rows_a, int cols_a, int cols_b,
     float* C, const CUtensorMap* tensorMapA, const CUtensorMap* tensorMapB
 ) {
-    __shared__ alignas(128) half sA[BM * BK];
-    __shared__ alignas(128) half sB[BK * BN];
+    __shared__ alignas(1024) half sA[BM * BK];  // 128B alignment is required by multi dimensional bulk tensor async copy
+    __shared__ alignas(1024) half sB[BK * BN];   // but for swizzle mode 128B this should be 1024 alignment!
 
     float d[WGMMA_N / 16][8];
     static_assert(sizeof(d) * 128 == BM * BN * sizeof(float));
@@ -175,14 +177,15 @@ __global__ void __launch_bounds__(NUM_THREADS) gemm_tensor_hopper_kernel(
     if (threadIdx.x == 0) {
         init(&barA, blockDim.x);
         init(&barB, blockDim.x);
-        cde::fence_proxy_async_shared_cta();
+        cde::fence_proxy_async_shared_cta();    // make initialized barrier visible in async proxy
     }
-    __syncthreads();
+    __syncthreads();    // so that the initialized barrier is visible to all threads
 
     barrier::arrival_token tokenA, tokenB;
     for (int block_k_iter = 0; block_k_iter < num_blocks_k; ++block_k_iter) {
         // Load A and B tiles using TMA async bulk copy
         if (threadIdx.x == 0) {
+            // block_k_iter*BK, num_block_m*BM <- offsets into matrix A in GMEM for this thread block
             cde::cp_async_bulk_tensor_2d_global_to_shared(&sA[0], tensorMapA, block_k_iter * BK, num_block_m * BM, barA);
             tokenA = cuda::device::barrier_arrive_tx(barA, 1, sizeof(sA));
             cde::cp_async_bulk_tensor_2d_global_to_shared(&sB[0], tensorMapB, block_k_iter * BK, num_block_n * BN, barB);
@@ -193,7 +196,6 @@ __global__ void __launch_bounds__(NUM_THREADS) gemm_tensor_hopper_kernel(
         }
         barA.wait(std::move(tokenA));
         barB.wait(std::move(tokenB));
-        __syncthreads();
 
         // Compute: 4 WGMMA operations per K-tile (BK=64, WGMMA_K=16)
         warpgroup_arrive();

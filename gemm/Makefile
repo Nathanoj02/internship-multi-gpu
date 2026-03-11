@@ -14,9 +14,10 @@ TARGET_BENCHMARK := $(BIN_DIR)/gemm_benchmark
 TARGET_WARP := $(BIN_DIR)/gemm_warp_tiling
 TARGET_TENSOR_PROFILE := $(BIN_DIR)/profile_tensor
 TARGET_TENSOR_MRE := $(BIN_DIR)/gemm_tensor_mre
+TARGET_HOPPER := $(BIN_DIR)/gemm_hopper
 
 # Source files (excluding main files)
-CU_SOURCES := $(filter-out $(SRC_DIR)/main_correctness.cu $(SRC_DIR)/main_benchmark.cu $(SRC_DIR)/main_warp_tiling.cu $(SRC_DIR)/main_profile_tensor.cu $(SRC_DIR)/main_tensor_mre.cu, $(wildcard $(SRC_DIR)/*.cu) $(wildcard $(SRC_DIR)/kernels/*.cu))
+CU_SOURCES := $(filter-out $(SRC_DIR)/main_correctness.cu $(SRC_DIR)/main_benchmark.cu $(SRC_DIR)/main_warp_tiling.cu $(SRC_DIR)/main_profile_tensor.cu $(SRC_DIR)/main_tensor_mre.cu $(SRC_DIR)/main_hopper.cu, $(wildcard $(SRC_DIR)/*.cu) $(wildcard $(SRC_DIR)/kernels/*.cu))
 CPP_SOURCES := $(wildcard $(SRC_DIR)/*.cpp)
 
 # Object files
@@ -30,6 +31,7 @@ MAIN_BENCHMARK_OBJ := $(OBJ_DIR)/main_benchmark.cu.o
 MAIN_WARP_OBJ := $(OBJ_DIR)/main_warp_tiling.cu.o
 MAIN_TENSOR_PROFILE_OBJ := $(OBJ_DIR)/main_profile_tensor.cu.o
 MAIN_TENSOR_MRE_OBJ := $(OBJ_DIR)/main_tensor_mre.cu.o
+MAIN_HOPPER_OBJ := $(OBJ_DIR)/main_hopper.cu.o
 
 # Compiler flags
 # For GTX 1650 Ti
@@ -46,7 +48,7 @@ CUDA_LIBS := -lcudart
 
 # Default target
 .PHONY: all
-all: $(TARGET) $(TARGET_BENCHMARK) $(TARGET_WARP) $(TARGET_TENSOR_PROFILE) $(TARGET_TENSOR_MRE)
+all: $(TARGET) $(TARGET_BENCHMARK) $(TARGET_WARP) $(TARGET_TENSOR_PROFILE) $(TARGET_TENSOR_MRE) $(TARGET_HOPPER)
 
 # Create directories if they don't exist
 $(OBJ_DIR) $(BIN_DIR):
@@ -59,6 +61,7 @@ $(TARGET): $(COMMON_OBJECTS) $(MAIN_CORRECTNESS_OBJ) | $(BIN_DIR)
 # Link the benchmark executable
 $(TARGET_BENCHMARK): $(COMMON_OBJECTS) $(MAIN_BENCHMARK_OBJ) | $(BIN_DIR)
 	$(NVCC) $(NVCC_FLAGS) $^ -o $@ $(CUDA_LIBS)
+
 # Link the warp tiling executable
 $(TARGET_WARP): $(COMMON_OBJECTS) $(MAIN_WARP_OBJ) | $(BIN_DIR)
 	$(NVCC) $(NVCC_FLAGS) $^ -o $@ $(CUDA_LIBS)
@@ -68,6 +71,10 @@ $(TARGET_TENSOR_PROFILE): $(COMMON_OBJECTS) $(MAIN_TENSOR_PROFILE_OBJ) | $(BIN_D
 	$(NVCC) $(NVCC_FLAGS) $^ -o $@ $(CUDA_LIBS)
 
 $(TARGET_TENSOR_MRE): $(COMMON_OBJECTS) $(MAIN_TENSOR_MRE_OBJ) | $(BIN_DIR)
+	$(NVCC) $(NVCC_FLAGS) $^ -o $@ $(CUDA_LIBS)
+
+# Link the hopper executable
+$(TARGET_HOPPER): $(COMMON_OBJECTS) $(MAIN_HOPPER_OBJ) | $(BIN_DIR)
 	$(NVCC) $(NVCC_FLAGS) $^ -o $@ $(CUDA_LIBS)
 
 # Compile CUDA source files
@@ -107,6 +114,11 @@ warp: $(TARGET_WARP)
 run-tensor-mre: $(TARGET_TENSOR_MRE)
 	./$(TARGET_TENSOR_MRE)
 
+# Run the hopper benchmark
+.PHONY: run-hopper
+run-hopper: $(TARGET_HOPPER)
+	./$(TARGET_HOPPER)
+
 # Print variables for debugging
 .PHONY: info
 info:
@@ -116,3 +128,4 @@ info:
 	@echo "Main Target: $(TARGET)"
 	@echo "Warp Target: $(TARGET_WARP)"
 	@echo "Tensor MRE Target: $(TARGET_TENSOR_MRE)"
+	@echo "Hopper Target: $(TARGET_HOPPER)"
